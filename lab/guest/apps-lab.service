@@ -1,0 +1,16 @@
+[Unit]
+Description=Apps lab: Boardfarm providers, the routers and their LAN clients
+Wants=network-online.target snap.lxd.daemon.service
+After=network-online.target docker.service snap.lxd.daemon.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/apps-lab-runtime start
+ExecStop=/usr/local/sbin/apps-lab-runtime stop
+RemainAfterExit=yes
+TimeoutStartSec=1800
+TimeoutStopSec=300
+
+[Install]
+WantedBy=multi-user.target

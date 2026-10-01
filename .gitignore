@@ -1,0 +1,6 @@
+# the Yocto workspace, build outputs and the reference clones
+/yocto/
+/out/
+/tmp/
+__pycache__/
+.pytest_cache/

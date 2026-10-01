@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# The apps lab's acceptance check: every router runs, has its WAN address from its own Kea
+# server, reaches the internet, serves its LAN client, and has its application framework.
+#
+#   apps-lab-check [NAME...]      default: every router of APPS_LAB_ROUTERS
+set -uo pipefail
+exec </dev/null
+
+. /etc/default/apps-lab
+internet=${APPS_LAB_CHECK_ADDRESS:-8.8.8.8}
+internet_name=${APPS_LAB_CHECK_NAME:-github.com}
+failures=0
+
+pass() { printf '  PASS  %s\n' "$1"; }
+fail() { printf '  FAIL  %s\n' "$1"; failures=$((failures + 1)); }
+check() {    # check "what" command...
+    local what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then pass "$what"; else fail "$what"; fi
+}
+in_router() { lxc exec "$name" -- "$@"; }
+unit_active() {    # a unit runs; one that restarts itself is given a minute to do so
+    local attempt
+    for attempt in $(seq 1 30); do
+        [ "$(in_router systemctl is-active "$1" 2>/dev/null)" != active ] || return 0
+        sleep 2
+    done
+    return 1
+}
+usp_get() {    # the router's own USP controller reads a path from its agent
+    local attempt
+    for attempt in $(seq 1 30); do
+        in_router obuspa -c get "$1" 2>/dev/null | grep -q "^$1" && return 0
+        sleep 2
+    done
+    return 1
+}
+
+check_router() {
+    local name=$1 framework=$2 cpe=$3 index=$((100 + $3)) address lease unit
+    printf '%s (%s, Boardfarm CPE %s)\n' "$name" "$framework" "$cpe"
+
+    [ "$(lxc info "$name" 2>/dev/null | sed -n 's/^Status: //p')" = RUNNING ] || {
+        fail 'the container runs'
+        return
+    }
+    pass "the container runs (image $(lxc config get "$name" user.apps-lab.image))"
+
+    address=$(in_router ip -4 -o address show erouter0 2>/dev/null | awk '{print $4; exit}')
+    case "$address" in
+        "10.$index.0."*) pass "WAN address $address on erouter0, from dhcp-cpe$cpe" ;;
+        *) fail "WAN address on erouter0 in 10.$index.0.0/24 (has: ${address:-none})" ;;
+    esac
+    check "default route through the WAN gateway 10.$index.0.20 (wan-cpe$cpe)" \
+        sh -c "lxc exec $name -- ip -4 route show default | grep -q 'via 10\.$index\.0\.20 '"
+    check "the router reaches the internet ($internet)" in_router ping -c 2 -W 3 "$internet"
+    check "the router resolves names ($internet_name)" in_router ping -c 1 -W 5 "$internet_name"
+
+    address=$(in_router ip -4 -o address show brlan0 2>/dev/null | awk '{print $4; exit}')
+    if [ -n "$address" ]; then pass "LAN bridge brlan0 at $address"; else fail 'LAN bridge brlan0 has an address'; fi
+    check 'the LAN port eth2 is in brlan0' in_router test -e /sys/class/net/brlan0/brif/eth2
+
+    lease=$(docker exec "lan-cpe$cpe" ip -4 -o address show eth1 2>/dev/null | awk '{print $4; exit}')
+    if [ -n "$lease" ]; then pass "lan-cpe$cpe has $lease from the router"; else fail "lan-cpe$cpe has an address from the router"; fi
+    check "lan-cpe$cpe reaches the router (${address%/*})" \
+        docker exec "lan-cpe$cpe" ping -I eth1 -c 2 -W 3 "${address%/*}"
+    check "lan-cpe$cpe reaches the internet through the router ($internet)" \
+        docker exec "lan-cpe$cpe" ping -I eth1 -c 2 -W 3 "$internet"
+
+    case "$framework" in
+        dac) set -- dobby dsm ;;
+        lcm) set -- lcm-cthulhu lcm-timingila ;;
+    esac
+    for unit in "$@" usp-pa; do
+        check "$unit runs" unit_active "$unit"
+    done
+    check 'Device.SoftwareModules. answers on rbus' \
+        sh -c "lxc exec $name -- rbuscli getvalues Device.SoftwareModules. | grep -q 'Device.SoftwareModules'"
+    check 'Device.SoftwareModules. answers on USP (obuspa -c get)' usp_get Device.SoftwareModules.
+}
+
+for router in $APPS_LAB_ROUTERS; do
+    IFS=: read -r name framework cpe <<< "$router"
+    if [ "$#" -gt 0 ]; then
+        case " $* " in *" $name "*) ;; *) continue ;; esac
+    fi
+    check_router "$name" "$framework" "$cpe"
+done
+
+# Boardfarm's own view of its providers: every container answers on Docker and on SSH.
+if [ "$#" -eq 0 ]; then
+    echo 'Boardfarm'
+    check 'bf-lab status: every connectivity check passes' \
+        env BF_LAB_CONFIG=apps-lab.json BF_INVENTORY=apps-lab.json /opt/boardfarm/.venv/bin/bf-lab status
+fi
+
+if [ "$failures" -eq 0 ]; then
+    echo 'apps lab: every check passed'
+else
+    echo "apps lab: $failures check(s) failed"
+    exit 1
+fi

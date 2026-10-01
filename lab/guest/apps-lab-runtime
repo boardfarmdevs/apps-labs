@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+# The apps lab's runtime in the VM: bring Boardfarm's providers up, then the routers, then
+# the LAN clients, in that order; and take the routers down again.
+set -euo pipefail
+exec </dev/null
+
+. /etc/default/apps-lab
+state=/var/lib/apps-lab
+workspace=/opt/boardfarm
+lab_repo=$workspace/boardfarm-lab-staging
+bf_lab=$workspace/.venv/bin/bf-lab
+export BF_LAB_CONFIG=apps-lab.json BF_INVENTORY=apps-lab.json
+
+cpes() {    # the Boardfarm slots the lab's configuration has
+    seq 1 "$(jq -r .deployment.num_cpes "$lab_repo/lab/$BF_LAB_CONFIG")"
+}
+
+routers() {    # "name framework cpe" per line
+    local router
+    for router in $APPS_LAB_ROUTERS; do
+        printf '%s\n' "${router//:/ }"
+    done
+}
+
+running() {    # every named Docker container runs
+    local container
+    for container in "$@"; do
+        [ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null)" = true ] || return 1
+    done
+}
+
+bridge_of() {
+    docker network inspect "$1" -f '{{index .Options "com.docker.network.bridge.name"}}' 2>/dev/null
+}
+
+# The WAN gateway reaches the internet through Boardfarm's management network (eth0) and
+# masquerades there. Connected to its WAN network while it runs, as bf-lab setup does, it
+# takes Docker's gateway on that network as its default route instead and forwards nowhere.
+wan_routes_out() {
+    docker exec "wan-cpe$1" ip -4 route show default 2>/dev/null | grep -q ' dev eth0'
+}
+
+# A slot is ready when its three containers run on the slot's two bridges, the Kea server
+# and the gateway have their WAN addresses, the gateway routes out, and Kea serves both
+# families. slot_problem names the first of these that does not hold.
+slot_problem() {
+    local i=$1 index=$((100 + $1)) container
+    for container in "dhcp-cpe$i" "wan-cpe$i" "lan-cpe$i"; do
+        running "$container" || { echo "$container does not run"; return; }
+    done
+    [ "$(bridge_of "wan-cpe$i")" = "br-wan$index" ] && ip link show "br-wan$index" >/dev/null 2>&1 ||
+        { echo "no bridge br-wan$index for the network wan-cpe$i"; return; }
+    [ "$(bridge_of "lan-cpe$i")" = "br-lan$((200 + i))" ] && ip link show "br-lan$((200 + i))" >/dev/null 2>&1 ||
+        { echo "no bridge br-lan$((200 + i)) for the network lan-cpe$i"; return; }
+    docker exec "dhcp-cpe$i" ip -4 address show eth1 2>/dev/null | grep -q "10\.$index\.0\.10/24" ||
+        { echo "dhcp-cpe$i is not at 10.$index.0.10"; return; }
+    docker exec "wan-cpe$i" ip -4 address show eth1 2>/dev/null | grep -q "10\.$index\.0\.20/24" ||
+        { echo "wan-cpe$i is not at 10.$index.0.20"; return; }
+    wan_routes_out "$i" || { echo "wan-cpe$i does not route out through eth0"; return; }
+    docker exec "dhcp-cpe$i" pidof kea-dhcp4 >/dev/null 2>&1 || { echo "dhcp-cpe$i: Kea DHCPv4 does not run"; return; }
+    docker exec "dhcp-cpe$i" pidof kea-dhcp6 >/dev/null 2>&1 || { echo "dhcp-cpe$i: Kea DHCPv6 does not run"; return; }
+}
+
+boardfarm_problems() {
+    local i problem
+    for i in $(cpes); do
+        problem=$(slot_problem "$i")
+        [ -z "$problem" ] || printf '%s\n' "$problem"
+    done
+}
+
+boardfarm_ready() {
+    [ -z "$(boardfarm_problems)" ]
+}
+
+wait_boardfarm_ready() {
+    local attempt
+    for attempt in $(seq 1 "${1:-30}"); do
+        boardfarm_ready && return 0
+        sleep 1
+    done
+    return 1
+}
+
+stop_routers() {
+    local name framework cpe
+    while read -r name framework cpe; do
+        if [ "$(lxc info "$name" 2>/dev/null | sed -n 's/^Status: //p')" = RUNNING ]; then
+            lxc stop "$name" --timeout 60 || lxc stop "$name" --force
+        fi
+    done < <(routers)
+}
+
+# What a restart of one container repairs: Kea's stale PID files, and the gateway's route.
+repair_providers() {
+    local i
+    for i in $(cpes); do
+        if docker container inspect "dhcp-cpe$i" >/dev/null 2>&1 \
+            && ! docker exec "dhcp-cpe$i" pidof kea-dhcp4 >/dev/null 2>&1; then
+            # Kea leaves its PID files in the container's writable layer; after a power-off
+            # they name processes that no longer exist and Kea does not start.
+            docker exec "dhcp-cpe$i" sh -c 'rm -f /var/run/kea/*.pid /run/kea/*.pid' || true
+            docker restart "dhcp-cpe$i" >/dev/null || true
+        fi
+        if running "wan-cpe$i" && ! wan_routes_out "$i"; then
+            docker restart "wan-cpe$i" >/dev/null || true
+        fi
+    done
+}
+
+boardfarm_up() {
+    local i attempt
+    test -x "$bf_lab"
+    test -f "$lab_repo/lab/$BF_LAB_CONFIG"
+    # Docker keeps the containers and their networks across a VM reboot: start what is
+    # there before deciding that the lab has to be set up again.
+    for i in $(cpes); do
+        docker start "dhcp-cpe$i" "wan-cpe$i" "lan-cpe$i" >/dev/null 2>&1 || true
+    done
+    # After a boot the containers take their time (the gateway alone waits for its WAN
+    # interface, then configures it); repair what a restart repairs before giving up.
+    for attempt in 1 2 3; do
+        wait_boardfarm_ready 60 && break
+        echo "Boardfarm is not ready (round $attempt/3):"
+        boardfarm_problems | sed 's/^/  /'
+        repair_providers
+    done
+    if ! wait_boardfarm_ready 30; then
+        echo 'Boardfarm did not come back; setting it up again:'
+        boardfarm_problems | sed 's/^/  /'
+        # Setting the lab up removes and recreates the bridges the routers are on.
+        stop_routers
+        cd "$lab_repo/lab"
+        # Not bf-lab status here: it wants SSH on the LAN clients, which they only start
+        # once they have waited for a router that is not up yet.
+        for attempt in 1 2 3; do
+            echo "Boardfarm setup attempt $attempt/3"
+            if "$bf_lab" teardown,setup; then
+                break
+            fi
+            [ "$attempt" -lt 3 ] || { echo 'Boardfarm setup failed' >&2; return 1; }
+            sleep $((attempt * 10))
+        done
+        # bf-lab connected each gateway to its WAN network while it ran: started again with
+        # both networks, it routes out through the management network.
+        for i in $(cpes); do
+            docker restart "wan-cpe$i" >/dev/null
+        done
+        wait_boardfarm_ready 90 || { echo 'Boardfarm is set up but not ready' >&2; return 1; }
+    fi
+    for i in $(cpes); do
+        docker update --restart unless-stopped "dhcp-cpe$i" "wan-cpe$i" "lan-cpe$i" >/dev/null
+    done
+    # Docker turns bridge netfilter on with every network it creates; with it, a frame
+    # bridged between a router and its providers is judged by Docker's isolation rules.
+    modprobe br_netfilter
+    sysctl -q -w net.bridge.bridge-nf-call-iptables=0 net.bridge.bridge-nf-call-ip6tables=0
+    date -Ins > "$state/boardfarm.completed-at"
+    printf '%s\n' 'boardfarm-ready' > "$state/boardfarm.status"
+}
+
+lan_lease() {    # the LAN client's address from the router, if it has one
+    docker exec "lan-cpe$1" ip -4 -o address show eth1 2>/dev/null | awk '{print $4; exit}'
+}
+
+# The LAN client asks for its address once, when its container starts. Started before the
+# router's LAN was up it has none (and has skipped its services), so it is started again.
+lan_clients_up() {
+    local name framework cpe attempt
+    while read -r name framework cpe; do
+        [ -z "$(lan_lease "$cpe")" ] || continue
+        docker restart "lan-cpe$cpe" >/dev/null
+    done < <(routers)
+    while read -r name framework cpe; do
+        for attempt in $(seq 1 90); do
+            [ -z "$(lan_lease "$cpe")" ] || break
+            sleep 1
+        done
+        echo "lan-cpe$cpe: ${name}'s LAN address $(lan_lease "$cpe")"
+        [ -n "$(lan_lease "$cpe")" ]
+    done < <(routers)
+}
+
+start() {
+    local name framework cpe
+    lxd waitready --timeout 300
+    boardfarm_up
+    while read -r name framework cpe; do
+        lxc info "$name" >/dev/null 2>&1 || { echo "$name is not deployed" >&2; continue; }
+        [ "$(lxc info "$name" | sed -n 's/^Status: //p')" = RUNNING ] || lxc start "$name"
+    done < <(routers)
+    while read -r name framework cpe; do
+        lxc info "$name" >/dev/null 2>&1 || continue
+        /usr/local/sbin/apps-lab-router wait "$name"
+    done < <(routers)
+    lan_clients_up
+    date -Ins > "$state/runtime.completed-at"
+}
+
+case "${1:-}" in
+    start) start ;;
+    stop) stop_routers ;;
+    boardfarm) lxd waitready --timeout 300; boardfarm_up ;;
+    lan) lan_clients_up ;;
+    *) echo "usage: $(basename "$0") start|stop|boardfarm|lan" >&2; exit 2 ;;
+esac

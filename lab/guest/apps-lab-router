@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+# Deploy and inspect the apps lab's routers: the bpibroadband image as a privileged nested
+# LXD container on one Boardfarm CPE slot (WAN on br-wan10<cpe>, LAN on br-lan20<cpe>).
+# Derived from meta-cmf-bananapi-vcpe gen/bpi.sh; the routers get no Wi-Fi radio.
+#
+# The LAN port is eth2, not eth1: the image removes an interface named eth1 some ten
+# seconds into its boot, and it bridges no other port into brlan0 by itself. So the
+# router gets a small unit that keeps eth2 a port of brlan0 (the RDK EasyMesh lab's
+# wired LAN port is the same eth2, kept in brlan0 from its VM).
+set -euo pipefail
+# LXC commands can read a non-terminal stdin as YAML; the one profile edit below pipes its
+# own input.
+exec </dev/null
+
+. /etc/default/apps-lab
+state=/var/lib/apps-lab
+
+usage() {
+    cat <<EOF
+usage: $(basename "$0") COMMAND
+
+  deploy NAME FRAMEWORK CPE IMAGE [--fresh]
+                 create or replace the router NAME from IMAGE (*.rootfs.lxc.tar.bz2) on the
+                 Boardfarm slot CPE and start it; --fresh also gives it an empty /nvram
+  wait NAME [SECONDS]
+                 wait until the router has its WAN address and its LAN bridge (default 420)
+  list           the lab's routers and what they were deployed from
+EOF
+}
+
+# Deterministic MACs from the name, as gen-util.sh makes them: the image derives the
+# router's identity from eth0's MAC, so it stays the same across deploys.
+mac_wan() { printf '00:60:2f:%s\n' "$(printf '%s' "$1" | md5sum | cut -c1-6 | sed 's/../&:/g; s/:$//')"; }
+mac_lan() { printf '00:60:2f:%s\n' "$(printf '%s' "$1:secondary" | md5sum | cut -c7-12 | sed 's/../&:/g; s/:$//')"; }
+
+# The image is one archive (metadata.yaml and rootfs/). LXD 6.9 imports that form but can
+# hang creating an instance from it, so it is imported as the split form on every release.
+# The source archive's hash is kept as a property: an unchanged image is not imported again.
+import_image() {
+    local archive=$1 alias=$2 fingerprint installed work
+    fingerprint=$(sha256sum "$archive" | awk '{print $1}')
+    installed=$(lxc image get-property "$alias" user.source_sha256 2>/dev/null || true)
+    if [ "$installed" = "$fingerprint" ]; then
+        echo "image $alias already matches $(basename "$archive")"
+        return
+    fi
+    ! lxc image info "$alias" >/dev/null 2>&1 || lxc image delete "$alias"
+    work=$(mktemp -d "$state/import.XXXXXX")
+    tar --numeric-owner -xjf "$archive" -C "$work"
+    test -f "$work/metadata.yaml"
+    test -d "$work/rootfs"
+    tar --numeric-owner -C "$work" -czf "$work/metadata.tar.gz" metadata.yaml
+    tar --numeric-owner -C "$work/rootfs" -czf "$work/rootfs.tar.gz" .
+    lxc image import "$work/metadata.tar.gz" "$work/rootfs.tar.gz" --alias "$alias"
+    rm -rf -- "$work"
+    lxc image set-property "$alias" user.source_sha256 "$fingerprint"
+    lxc image set-property "$alias" user.source "$(basename "$archive")"
+}
+
+deploy() {
+    local name=$1 framework=$2 cpe=$3 archive=$4 fresh=${5:-}
+    local wan=br-wan$((100 + cpe)) lan=br-lan$((200 + cpe)) alias=apps-lab-$framework
+    local nvram=$state/nvram/$name stamp
+    case "$framework" in dac|lcm) ;; *) echo "unknown framework: $framework" >&2; exit 2 ;; esac
+    [ -z "$fresh" ] || [ "$fresh" = --fresh ] || { usage >&2; exit 2; }
+    test -f "$archive"
+    ip link show "$wan" >/dev/null
+    ip link show "$lan" >/dev/null
+    stamp=$(basename "$archive" | grep -oE '[0-9]{14}' | head -n 1)
+
+    import_image "$archive" "$alias"
+
+    echo "Configuring $name ($framework, CPE $cpe: $wan, $lan)"
+    if lxc info "$name" >/dev/null 2>&1; then
+        lxc stop "$name" --timeout 30 >/dev/null 2>&1 || lxc stop "$name" --force >/dev/null 2>&1 || true
+        lxc delete "$name" --force
+    fi
+    # /nvram is a directory of the VM bound into the router: its identity and
+    # configuration outlive a redeploy unless --fresh asks for a new device.
+    [ -z "$fresh" ] || rm -rf -- "$nvram"
+    install -d "$nvram"
+
+    lxc profile delete "$name" >/dev/null 2>&1 || true
+    lxc profile create "$name" >/dev/null
+    cat <<EOF | lxc profile edit "$name"
+name: $name
+description: "apps lab router ($framework), Boardfarm CPE $cpe"
+config:
+  boot.autostart: "false"
+  security.privileged: "true"
+  security.nesting: "true"
+  limits.cpu: "$ROUTER_CPUS"
+  limits.memory: $ROUTER_MEMORY
+  limits.memory.swap: "false"
+  environment.HOME: /home/root
+  environment.TZ: PST8PDT,M3.2.0,M11.1.0
+  environment.CONTAINER_NAME: $name
+  environment.SERIAL_NUMBER: $name
+  environment.STORED_MAC1: $(mac_wan "$name")
+  environment.STORED_MAC2: $(mac_lan "$name")
+  environment.rssfree_logging: "false"
+  environment.syscfg_logging: "false"
+  environment.sysevent_logging: "false"
+  environment.rbus_logging: "false"
+  environment.haltrace: "false"
+  environment.halbacktrace: "false"
+devices:
+  root:
+    path: /
+    pool: $ROUTER_POOL
+    type: disk
+    size: $ROUTER_ROOT
+  eth0:
+    type: nic
+    nictype: bridged
+    parent: $wan
+    hwaddr: $(mac_wan "$name")
+    name: eth0
+  eth2:
+    type: nic
+    nictype: bridged
+    parent: $lan
+    hwaddr: $(mac_lan "$name")
+    name: eth2
+  nvram:
+    type: disk
+    source: $nvram
+    path: /nvram
+EOF
+
+    lxc init "$alias" "$name" -p "$name"
+    lxc config set "$name" user.apps-lab.framework "$framework"
+    lxc config set "$name" user.apps-lab.cpe "$cpe"
+    lxc config set "$name" user.apps-lab.build "$stamp"
+    lxc config set "$name" user.apps-lab.image "$(basename "$archive")"
+    lxc start "$name"
+    install_lan_port "$name"
+    install_usp_agent "$name"
+}
+
+# The USP agent (usp-pa, obuspa) does not start in this image: vcpe-init points its factory
+# reset file at /etc/usp-pa/oktopus-mqtt-obuspa.txt on every boot and removes its database,
+# and the image has no such file. The lab provides it: an agent without a remote
+# controller. The lab's controller is obuspa -c on the router itself.
+install_usp_agent() {
+    local name=$1
+    lxc exec "$name" -- sh -c 'cat > /etc/usp-pa/oktopus-mqtt-obuspa.txt' <<'EOF'
+# apps lab: the USP agent without a remote controller (the controller is "obuspa -c" on the router)
+Internal.Reboot.Cause "LocalFactoryReset"
+EOF
+    lxc exec "$name" -- systemctl restart usp-pa.service
+}
+
+# The unit that keeps the LAN port in brlan0: the image makes and remakes that bridge
+# without it. It is in the router's root filesystem, so it is there after a reboot.
+install_lan_port() {
+    local name=$1 attempt
+    for attempt in $(seq 1 60); do
+        lxc exec "$name" -- test -d /run/systemd/system 2>/dev/null && break
+        sleep 1
+    done
+    lxc exec "$name" -- sh -c 'cat > /etc/systemd/system/apps-lab-lan-port.service' <<'EOF'
+[Unit]
+Description=apps lab: keep the LAN port eth2 a port of brlan0
+
+[Service]
+ExecStart=/bin/sh -c 'while :; do \
+    if [ -e /sys/class/net/eth2 ] && [ -e /sys/class/net/brlan0 ] && [ ! -e /sys/class/net/brlan0/brif/eth2 ]; then \
+        ip link set eth2 up && ip link set eth2 master brlan0 && echo "eth2 attached to brlan0"; \
+    fi; sleep 3; done'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    lxc exec "$name" -- systemctl daemon-reload
+    lxc exec "$name" -- systemctl enable --now apps-lab-lan-port.service
+}
+
+# The WAN address comes from the slot's Kea server on erouter0 (the image's name for
+# eth0); brlan0 is the image's LAN bridge, with the LAN port in it.
+router_ready() {
+    lxc exec "$1" -- sh -c \
+        "ip -4 -o address show erouter0 2>/dev/null | grep -q 'inet ' &&
+         ip -4 -o address show brlan0 2>/dev/null | grep -q 'inet ' &&
+         test -e /sys/class/net/brlan0/brif/eth2"
+}
+
+wait_router() {
+    local name=$1 timeout=${2:-420} deadline
+    deadline=$((SECONDS + timeout))
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if router_ready "$name" 2>/dev/null; then
+            echo "$name ready after ${SECONDS}s: $(lxc exec "$name" -- sh -c \
+                "ip -4 -o address show erouter0 | awk '{print \$4}'") on erouter0"
+            return 0
+        fi
+        sleep 5
+    done
+    echo "$name has no WAN address, no LAN bridge or no LAN port in it after ${timeout}s" >&2
+    lxc exec "$name" -- ip -4 -o address show >&2 || true
+    return 1
+}
+
+case "${1:-}" in
+    deploy) [ $# -ge 5 ] || { usage >&2; exit 2; }; deploy "${@:2}" ;;
+    wait) [ $# -ge 2 ] || { usage >&2; exit 2; }; wait_router "${@:2}" ;;
+    list) lxc list -c ns4,user.apps-lab.framework:framework,user.apps-lab.cpe:cpe,user.apps-lab.image:image --format table ;;
+    -h|--help|help|'') usage ;;
+    *) usage >&2; exit 2 ;;
+esac

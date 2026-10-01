@@ -1,0 +1,35 @@
+{
+  "base": "base.json",
+  "lab_name": "apps-lab",
+  "description": "two bananapi RDK-B broadband vCPEs, one per application framework (DAC, LCM): a dhcp, a wan and a lan container each, no shared services",
+
+  "physical_network": {
+    "host_interface": ""
+  },
+
+  "switch": {
+    "mgmt_ip": "",
+    "username": "",
+    "password": ""
+  },
+
+  "components": {
+    "dhcp": true,
+    "wan": true,
+    "lan": true,
+    "lan2": false,
+    "services": false
+  },
+
+  "deployment": {
+    "num_cpes": 2,
+    "cpes": [
+      {
+        "name": "bpi-dac"
+      },
+      {
+        "name": "bpi-lcm"
+      }
+    ]
+  }
+}

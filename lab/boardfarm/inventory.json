@@ -1,0 +1,98 @@
+{
+  "apps-dac": {
+    "devices": [
+      {
+        "name": "board",
+        "type": "bf_rpi4rdkb_vcpe",
+        "container_name": "bpibroadband-dac",
+        "connection_type": "local_cmd",
+        "feature": "cable_modem",
+        "eRouter_Provisioning_mode": "dual",
+        "powerport": "lxd://bpibroadband-dac",
+        "flash_image": {
+          "url": ""
+        }
+      },
+      {
+        "name": "lan",
+        "type": "bf_lan",
+        "connection_type": "authenticated_ssh",
+        "ipaddr": "10.21.0.21",
+        "port": 22,
+        "username": "root",
+        "password": "bigfoot1",
+        "options": "mgmt-dns:8.8.8.8"
+      },
+      {
+        "name": "wan",
+        "type": "bf_wan",
+        "connection_type": "authenticated_ssh",
+        "ipaddr": "10.22.0.31",
+        "port": 22,
+        "username": "root",
+        "password": "bigfoot1",
+        "options": "wan-static-ip:10.101.0.20/24"
+      },
+      {
+        "name": "provisioner",
+        "type": "bf_dhcp",
+        "connection_type": "authenticated_ssh",
+        "ipaddr": "10.20.0.11",
+        "port": 22,
+        "username": "root",
+        "password": "bigfoot1",
+        "options": {
+          "static-ip": "10.101.0.10/24"
+        }
+      }
+    ]
+  },
+  "apps-lcm": {
+    "devices": [
+      {
+        "name": "board",
+        "type": "bf_rpi4rdkb_vcpe",
+        "container_name": "bpibroadband-lcm",
+        "connection_type": "local_cmd",
+        "feature": "cable_modem",
+        "eRouter_Provisioning_mode": "dual",
+        "powerport": "lxd://bpibroadband-lcm",
+        "flash_image": {
+          "url": ""
+        }
+      },
+      {
+        "name": "lan",
+        "type": "bf_lan",
+        "connection_type": "authenticated_ssh",
+        "ipaddr": "10.21.0.22",
+        "port": 22,
+        "username": "root",
+        "password": "bigfoot1",
+        "options": "mgmt-dns:8.8.8.8"
+      },
+      {
+        "name": "wan",
+        "type": "bf_wan",
+        "connection_type": "authenticated_ssh",
+        "ipaddr": "10.22.0.32",
+        "port": 22,
+        "username": "root",
+        "password": "bigfoot1",
+        "options": "wan-static-ip:10.102.0.20/24"
+      },
+      {
+        "name": "provisioner",
+        "type": "bf_dhcp",
+        "connection_type": "authenticated_ssh",
+        "ipaddr": "10.20.0.12",
+        "port": 22,
+        "username": "root",
+        "password": "bigfoot1",
+        "options": {
+          "static-ip": "10.102.0.10/24"
+        }
+      }
+    ]
+  }
+}

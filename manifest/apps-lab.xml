@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The apps lab's pinned sources. The upstream projects are those of
+     meta-cmf-bananapi-vcpe's doc/easymesh/build/manifest.xml at the layer commit
+     pinned below; added are the layer itself and the prpl LCM layers (the tags
+     meta-rdk-broadband-apps names in manifests/rdkbb-apps-lcm.xml). -->
+<manifest>
+  <remote fetch="https://code.rdkcentral.com/r/a/" name="cmf" review="https://code.rdkcentral.com/r/a/"/>
+  <remote fetch="https://github.com" name="github"/>
+  <remote fetch="https://git.openembedded.org" name="openembedded"/>
+  <remote fetch="http://git.yoctoproject.org" name="yocto"/>
+  <remote fetch="https://gitlab.com/prpl-foundation/prplrdkb/metalayers" name="prpl"/>
+  <default remote="cmf" revision="master" sync-j="2"/>
+  <project name="mediatek/meta-cmf-filogic" path="meta-cmf-filogic" remote="github" revision="211fa3d81ae19cc5c6be731d52b1aa6733336b71"/>
+  <project name="mediatek/meta-filogic" path="meta-filogic" remote="github" revision="c67a32a7c8876b328a8d1eeaca213e860d85b3ce"/>
+  <project name="meta-lts-mixins" remote="yocto" revision="75c503be95d147a846bf02461fd975e74c1abe6f" upstream="kirkstone/rust"/>
+  <project name="rdk/components/generic/rdk-oe/meta-cmf" path="meta-cmf" revision="2822921c31bb7834ea4eda45174ae0ba25573e56" upstream="rdk-next"/>
+  <project name="rdk/components/generic/rdk-oe/meta-cmf-broadband" path="meta-cmf-broadband" revision="c1d142987600ed0ef4293e4ce2da43dc06ee162d" upstream="rdk-next"/>
+  <project name="rdk/components/generic/rdk-oe/meta-cmf-mesh" path="meta-cmf-mesh" revision="d83368b1ec124e45ef3e61cf3acc12abf60780c8" upstream="rdk-next"/>
+  <project name="rdk/components/generic/rdk-oe/meta-rdk" path="meta-rdk" revision="e2391fe31c7e6873b338cc6c797ef53ec0431c83" upstream="rdk-next"/>
+  <project name="rdk/components/generic/rdk-oe/meta-rdk-broadband" path="meta-rdk-broadband" revision="794ade3a18161cbcab1625e382da69ff8a1768d2" upstream="rdk-next"/>
+  <project name="rdk/components/generic/rdk-oe/meta-rdk-ext" path="meta-rdk-ext" revision="f93985dd67ec4e313b3261c781cfd84526d01dd3" upstream="rdk-next"/>
+  <project name="rdk/components/opensource/oe/bitbake" path="openembedded-core/bitbake" revision="e9facd828215fee2fa637418bcb81ef65918bed6" upstream="rdk/kirkstone"/>
+  <project name="rdk/components/opensource/oe/meta-clang" path="meta-clang" revision="c728c3f9168c8a4ed05163a51dd48ca1ad8ac21d" upstream="rdk/kirkstone"/>
+  <project name="rdk/components/opensource/oe/meta-gplv2" path="meta-gplv2" revision="d2f8b5cdb285b72a4ed93450f6703ca27aa42e8a" upstream="kirkstone"/>
+  <project name="rdk/components/opensource/oe/meta-jz-mips" path="meta-jz-mips" revision="cc3815138fd1722757f4aa1bd11a3f88e67e08bb" upstream="master"/>
+  <project name="rdk/components/opensource/oe/meta-openembedded" path="meta-openembedded" revision="385736c2efb6a75f9aabb762a5c8817a9ced314b" upstream="rdk/kirkstone"/>
+  <project name="rdk/components/opensource/oe/meta-virtualization" path="meta-virtualization" revision="9482648daf0bb42ff3475e7892542cf99f3b8d48" upstream="rdk/kirkstone"/>
+  <project name="rdk/components/opensource/oe/openembedded-core" path="openembedded-core" revision="a440810df6473c36805646c48df02d22a1ada0bb" upstream="rdk/kirkstone"/>
+  <project name="rdkcentral/meta-cmf-bananapi" path="meta-cmf-bananapi" remote="github" revision="66c8f05dafcf66c70497d0fc0698547fc1f22be5" upstream="develop"/>
+  <project name="rdkcentral/meta-rdk-broadband-apps" path="meta-rdk-broadband-apps" remote="github" revision="f2d651a54d0a5148d71f1730a8317ac90d47e727" upstream="main"/>
+  <project name="rdkcentral/meta-rdk-iot" path="meta-rdk-iot" remote="github" revision="23e4246291edb11eec6be892982ebed7a0e53646" upstream="develop"/>
+  <project name="rdkcentral/meta-rdk-wan" path="meta-rdk-wan" remote="github" revision="05cd6c1dce8d9e6bd84acf1631007f1f6062d717" upstream="main"/>
+  <!-- the layer that retargets the Banana Pi build to an x86 container -->
+  <project name="boardfarmdevs/meta-cmf-bananapi-vcpe" path="meta-cmf-bananapi-vcpe" remote="github" revision="36e36052ec8afe19ab6466c225001f49253cce51" upstream="main"/>
+  <!-- prpl LCM: Ambiorix and the lifecycle manager (the LCM image only) -->
+  <project name="meta-amx" path="meta-amx" remote="prpl" revision="a089ac0d8abaf304b9aefddbab0d94f61ba5de6d" upstream="refs/tags/prplware-v4.1.0-p1"/>
+  <project name="meta-lcm" path="meta-lcm" remote="prpl" revision="bba4f3edae60054ab37c886c36c3f8a0f09b3076" upstream="refs/tags/prplware-v4.1.0"/>
+</manifest>

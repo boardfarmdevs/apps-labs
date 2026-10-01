@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# The apps lab in the VM: status, the acceptance check, and a shell in a router.
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+usage: $(basename "$0") COMMAND
+
+  status           the runtime service, Boardfarm's containers and the routers
+  check            the acceptance check (apps-lab-check)
+  start | stop     the runtime service
+  sh NAME [CMD…]   a shell, or a command, in the router NAME
+EOF
+}
+
+case "${1:-}" in
+    status)
+        systemctl --no-pager --lines=0 status apps-lab.service || true
+        docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Networks}}'
+        /usr/local/sbin/apps-lab-router list </dev/null
+        ;;
+    check) exec /usr/local/sbin/apps-lab-check ;;
+    start) exec systemctl start apps-lab.service ;;
+    stop) exec systemctl stop apps-lab.service ;;
+    sh)
+        [ $# -ge 2 ] || { usage >&2; exit 2; }
+        name=$2
+        shift 2
+        [ $# -gt 0 ] || set -- bash -l
+        exec lxc exec "$name" -- "$@"
+        ;;
+    -h|--help|help|'') usage ;;
+    *) usage >&2; exit 2 ;;
+esac
