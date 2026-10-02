@@ -1,5 +1,7 @@
 # Apps labs
 
+**Site:** <https://boardfarmdevs.github.io/apps-labs/>
+
 Virtual labs that demonstrate the application frameworks of RDK-B: **DAC**
 (Downloadable Application Containers, the RDK default) and **LCM** (prpl
 Lifecycle Management). An apps lab is an RDK-B router, the Banana Pi
@@ -53,4 +55,5 @@ lab/build.sh router bpibroadband-dac        # a shell in a router
 | `build/` | the Yocto workspace and the two image builds |
 | `lab/` | the VM: `build.sh` on the host, `scripts/` and `guest/` in the VM, `boardfarm/` its two-CPE configuration, `lab.env` its pins and sizes |
 | `doc/` | the plan and the guides |
+| `site/`, `pages/` | the landing page and its build; `.github/workflows/pages.yml` publishes it |
 | `yocto/`, `out/`, `tmp/` | the Yocto workspace, build outputs and reference clones; not in the repository |

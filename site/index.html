@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apps labs</title>
+<meta name="description" content="A virtual lab for the application frameworks of RDK-B: DAC and prpl LCM side by side, each in its own router container on a Boardfarm WAN and LAN, managed through rbus and USP.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <section class="hero">
+    <p class="eyebrow">boardfarmdevs · Apps labs</p>
+    <h1>Downloadable applications on an RDK&#8209;B router, in a lab that fits in one VM</h1>
+    <p class="lead">RDK-B has two application frameworks: <b>DAC</b>, the downloadable application
+    containers that are its default, and <b>LCM</b>, prpl's lifecycle management. The apps lab runs
+    both side by side: two RDK-B routers, one per framework, each a container on its own Boardfarm
+    WAN and LAN, into which an application is installed, started and stopped through the data
+    model, over rbus and over USP.</p>
+    <p class="lead">An application here is a container in a container in a VM: an OCI bundle run by
+    crun, in a router that is itself a nested LXD container, in the lab VM, on a bare-metal host.</p>
+  </section>
+
+  <section id="frameworks">
+    <h2>The two frameworks</h2>
+    <div class="goals">
+      <article class="goal">
+        <p class="tag">RDK default</p>
+        <h3>DAC</h3>
+        <p>Downloadable Application Containers. DSM manages deployment and execution units, Dobby
+        runs them as OCI bundles with crun. It is what the apps toolkit builds unless told
+        otherwise.</p>
+        <ul class="projects">
+          <li><b>bpibroadband-dac</b>
+            <span>Boardfarm CPE 1: <code>dhcp-cpe1</code>, <code>wan-cpe1</code>, <code>lan-cpe1</code></span></li>
+          <li><b>Tools</b>
+            <span><code>dsmcli</code>, <code>DobbyTool</code>, <code>rbuscli</code>, <code>obuspa -c</code></span></li>
+        </ul>
+      </article>
+      <article class="goal">
+        <p class="tag">prpl</p>
+        <h3>LCM</h3>
+        <p>Lifecycle Management. timingila and cthulhu on the Ambiorix stack, with the same OCI
+        bundles run by crun, selected at build time with the prpl <code>meta-amx</code> and
+        <code>meta-lcm</code> layers.</p>
+        <ul class="projects">
+          <li><b>bpibroadband-lcm</b>
+            <span>Boardfarm CPE 2: <code>dhcp-cpe2</code>, <code>wan-cpe2</code>, <code>lan-cpe2</code></span></li>
+          <li><b>Tools</b>
+            <span><code>ba-cli</code>, <code>rbuscli</code>, <code>obuspa -c</code></span></li>
+        </ul>
+      </article>
+      <article class="goal">
+        <p class="tag">Both</p>
+        <h3>One data model</h3>
+        <p>Either way the router presents TR-181 <code>Device.SoftwareModules.</code>: install a
+        deployment unit from a URL, set an execution unit's requested state, read the execution
+        environments.</p>
+        <ul class="projects">
+          <li><b>rbus</b>
+            <span><code>Device.SoftwareModules.InstallDU()</code>, <code>ExecutionUnit.{i}.SetRequestedState()</code></span></li>
+          <li><b>USP</b>
+            <span>obuspa as the agent, and as the controller on the router itself</span></li>
+        </ul>
+      </article>
+    </div>
+    <figure class="target">
+      <div class="scroll">
+      <svg viewBox="0 0 900 400" role="img" aria-label="The apps lab: a bare-metal host runs the VM apps-lab; in it two Boardfarm CPE slots, each with a DHCP server and WAN gateway, a router container holding an application container, and a LAN client">
+        <rect class="box host" x="10" y="10" width="880" height="380" rx="12"/>
+        <text x="26" y="33" class="l">bare-metal host · LXD</text>
+        <rect class="box vm" x="30" y="44" width="840" height="334" rx="10"/>
+        <text x="46" y="66" class="l">apps-lab · LXD VM · Docker runs Boardfarm, nested LXD runs the routers</text>
+
+        <rect class="box" x="50" y="80" width="390" height="46" rx="8"/>
+        <text x="245" y="99" class="t">dhcp-cpe1 · wan-cpe1</text>
+        <text x="245" y="116" class="s">Kea DHCP · WAN gateway, NAT to the internet · br-wan101</text>
+        <path class="link" d="M245 126 L245 148"/>
+        <text x="255" y="142" class="l">erouter0</text>
+        <rect class="box router" x="50" y="148" width="390" height="142" rx="10"/>
+        <text x="245" y="171" class="t">bpibroadband-dac</text>
+        <text x="245" y="189" class="s">RDK-B router · nested LXD container · DSM, Dobby</text>
+        <rect class="box app" x="100" y="202" width="290" height="72" rx="8"/>
+        <text x="245" y="232" class="t">application</text>
+        <text x="245" y="252" class="s">OCI bundle run by crun</text>
+        <path class="link" d="M245 290 L245 312"/>
+        <text x="255" y="306" class="l">brlan0</text>
+        <rect class="box" x="50" y="312" width="390" height="46" rx="8"/>
+        <text x="245" y="331" class="t">lan-cpe1</text>
+        <text x="245" y="348" class="s">LAN client · address from the router · br-lan201</text>
+
+        <rect class="box" x="460" y="80" width="390" height="46" rx="8"/>
+        <text x="655" y="99" class="t">dhcp-cpe2 · wan-cpe2</text>
+        <text x="655" y="116" class="s">Kea DHCP · WAN gateway, NAT to the internet · br-wan102</text>
+        <path class="link" d="M655 126 L655 148"/>
+        <text x="665" y="142" class="l">erouter0</text>
+        <rect class="box router" x="460" y="148" width="390" height="142" rx="10"/>
+        <text x="655" y="171" class="t">bpibroadband-lcm</text>
+        <text x="655" y="189" class="s">RDK-B router · nested LXD container · timingila, cthulhu</text>
+        <rect class="box app" x="510" y="202" width="290" height="72" rx="8"/>
+        <text x="655" y="232" class="t">application</text>
+        <text x="655" y="252" class="s">OCI bundle run by crun</text>
+        <path class="link" d="M655 290 L655 312"/>
+        <text x="665" y="306" class="l">brlan0</text>
+        <rect class="box" x="460" y="312" width="390" height="46" rx="8"/>
+        <text x="655" y="331" class="t">lan-cpe2</text>
+        <text x="655" y="348" class="s">LAN client · address from the router · br-lan202</text>
+      </svg>
+      </div>
+      <figcaption>Two routers at once, each on its own Boardfarm slot: its own DHCP server and WAN
+      gateway above, its own LAN client below, and the application inside.</figcaption>
+    </figure>
+  </section>
+
+  <section id="built">
+    <h2>How it is built</h2>
+    <p>The apps lab follows the RDK EasyMesh lab of the
+    <a href="https://boardfarmdevs.github.io/easymesh-labs/">EasyMesh labs</a>: the same Yocto layer,
+    <a href="https://github.com/boardfarmdevs/meta-cmf-bananapi-vcpe">meta-cmf-bananapi-vcpe</a>,
+    which rebuilds the Banana Pi RDK-B broadband image for x86 as an LXD container; the same pinned
+    upstream sources; the same Boardfarm; the same three stages. It leaves out what applications do
+    not need (radios, the RF medium, extenders, Wi-Fi clients) and adds a second router, LAN
+    clients and the LCM image.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Stage</th><th>Script</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>Sources</td><td><code>build/bootstrap-sources.sh</code></td>
+          <td>The Yocto workspace at the commits <code>manifest/apps-lab.xml</code> pins: RDK Central, the layer, and the prpl LCM layers</td></tr>
+        <tr><td>Images</td><td><code>build/build-images.sh dac|lcm</code></td>
+          <td><code>rdk-generic-broadband-image</code> once per framework, each in its own build directory, on the shared download and sstate caches</td></tr>
+        <tr><td>Lab VM</td><td><code>lab/build.sh build</code></td>
+          <td>The VM <code>apps-lab</code>: Boardfarm for two CPE slots, both routers deployed, rebooted and checked</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="state">
+    <h2>Current state</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Part</th><th>State</th><th>Where it stands (1 October 2026)</th></tr></thead>
+      <tbody>
+        <tr><td>Pinned sources</td><td class="state done">Done</td>
+          <td>The workspace syncs and verifies at the pins: the EasyMesh lab's upstream commits, the layer, <code>meta-amx</code> and <code>meta-lcm</code> at the tags the apps toolkit names.</td></tr>
+        <tr><td>DAC image</td><td class="state done">Built</td>
+          <td>Almost entirely from the EasyMesh lab's sstate: it is the same image.</td></tr>
+        <tr><td>LCM image</td><td class="state wait">Building</td>
+          <td>Its first build: the framework switch changes the distro features, so little comes from sstate.</td></tr>
+        <tr><td>Lab VM, DAC router</td><td class="state done">Checked</td>
+          <td><code>bpibroadband-dac</code> takes its WAN address from its own Kea server, reaches the internet through its WAN gateway, and serves its LAN client, which reaches the internet through it. DSM, Dobby and the USP agent run; <code>Device.SoftwareModules.</code> answers on rbus and on USP.</td></tr>
+        <tr><td>Lab VM, LCM router</td><td class="state wait">Next</td>
+          <td>Its Boardfarm slot is up; the router follows its image.</td></tr>
+        <tr><td>Applications</td><td class="state wait">Next</td>
+          <td>One application installed and started on each router, then the application build and the bundle server.</td></tr>
+        <tr><td>Tests</td><td class="state wait">Planned</td>
+          <td>The lifecycle suite: install, start, observe, stop, uninstall, over rbus, the frameworks' own tools and USP.</td></tr>
+      </tbody>
+    </table></div>
+    <p>The phases, what the first builds showed and what is still open are in
+    <a href="https://github.com/boardfarmdevs/apps-labs/blob/main/doc/plan.md">the plan</a>.</p>
+  </section>
+
+  <section id="run">
+    <h2>Run it</h2>
+    <p>On an Ubuntu 22.04 host prepared as for the EasyMesh lab (the Yocto host tools, LXD with
+    <code>/dev/kvm</code>):</p>
+<pre><code>git clone git@github.com:boardfarmdevs/apps-labs.git ~/git/apps-labs
+cd ~/git/apps-labs
+export PATH="$HOME/hosttools/bin:$HOME/bin:$PATH"
+build/bootstrap-sources.sh        # the Yocto workspace in yocto/, at the pinned commits
+build/build-images.sh both        # the DAC and the LCM router image
+lab/build.sh build                # the VM apps-lab with both routers, checked
+lab/build.sh status
+lab/build.sh check                # WAN, DHCP, internet, LAN, framework: per router
+lab/build.sh router bpibroadband-dac        # a shell in a router</code></pre>
+    <p>In a router, the data model the applications are managed through:</p>
+<pre><code>rbuscli getvalues Device.SoftwareModules.
+obuspa -c get Device.SoftwareModules.
+rbuscli method_values "Device.SoftwareModules.InstallDU()" \
+    URL string http://&lt;server&gt;/hello.tar ExecutionEnvRef string default</code></pre>
+    <p>Building, operating and checking the lab is in
+    <a href="https://github.com/boardfarmdevs/apps-labs/blob/main/doc/build.md">the build guide</a>.</p>
+  </section>
+
+  <section id="reference">
+    <h2>Reference</h2>
+    <ul class="refs">
+      <li><a href="https://github.com/boardfarmdevs/apps-labs">apps-labs</a>: this repository; <a href="https://github.com/boardfarmdevs/apps-labs/blob/main/doc/plan.md">the plan</a> and <a href="https://github.com/boardfarmdevs/apps-labs/blob/main/doc/build.md">the build guide</a></li>
+      <li><a href="https://github.com/boardfarmdevs/meta-cmf-bananapi-vcpe">meta-cmf-bananapi-vcpe</a>: the layer the router images are built with, and its <a href="https://github.com/boardfarmdevs/meta-cmf-bananapi-vcpe/tree/main/doc/dac-lcm">DAC and LCM notes</a></li>
+      <li><a href="https://boardfarmdevs.github.io/easymesh-labs/">EasyMesh labs</a>: the labs this one derives from</li>
+      <li><a href="https://rdkcentral.github.io/meta-rdk-broadband-apps/">RDK Broadband Apps toolkit</a>: the frameworks' own documentation</li>
+      <li><a href="https://usp.technology/specification/#sec:lifecycle-management">USP software module management</a>: deployment units, execution units, execution environments</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

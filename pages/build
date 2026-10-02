@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Build this repository's Pages site into dist/site: the landing page (site/), static.
+# pages/finish-site.py then adds .nojekyll and build.json.
+set -euo pipefail
+cd "$(dirname "$(readlink -f "$0")")/.."
+rm -rf dist/site
+mkdir -p dist
+cp -a site dist/site
+test -f dist/site/index.html
+echo "Built dist/site from site/"
