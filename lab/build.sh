@@ -28,6 +28,8 @@ Commands:
   deploy [--fresh] [ROUTER...]
                        update, then the named routers (default: all) deployed again from their
                        images; --fresh: with an empty /nvram
+  apps                 the bundles of out/apps (apps/build.sh) onto the VM's bundle server;
+                       prints the URL each router installs them from
   router NAME [CMD...] a shell, or a command, in a router
   delete               delete the VM (its storage pool stays)
 
@@ -233,6 +235,28 @@ deploy_routers() {
     run_root /usr/local/sbin/apps-lab-check "$@"
 }
 
+# The built bundles (apps/build.sh, out/apps/*.tar) onto the VM's bundle server.
+push_apps() {
+    local bundle router rname framework cpe found=false
+    instance_exists
+    [ "$(instance_state)" = RUNNING ] || { echo "$name is not running: $0 start" >&2; exit 1; }
+    wait_agent
+    run_root install -d /var/lib/apps-lab/apps
+    for bundle in "$root"/out/apps/*.tar; do
+        [ -f "$bundle" ] || continue
+        lxc file push -q "$bundle" "$name/var/lib/apps-lab/apps/$(basename "$bundle")"
+        found=true
+    done
+    "$found" || { echo 'no bundles in out/apps: apps/build.sh' >&2; exit 1; }
+    run_root systemctl is-active --quiet apps-lab-apps.service
+    for router in $APPS_LAB_ROUTERS; do
+        IFS=: read -r rname framework cpe <<< "$router"
+        for bundle in "$root"/out/apps/*.tar; do
+            printf '%s: http://10.%s.0.1:8080/%s\n' "$rname" "$((100 + cpe))" "$(basename "$bundle")"
+        done
+    done
+}
+
 router_shell() {
     local router=${1:?router name}
     shift
@@ -259,6 +283,7 @@ case "${1:-}" in
     check) check_vm "${@:2}" ;;
     update) update_vm ;;
     deploy) deploy_routers "${@:2}" ;;
+    apps) push_apps ;;
     router) router_shell "${@:2}" ;;
     delete) delete_vm ;;
     -h|--help|help|'') usage ;;

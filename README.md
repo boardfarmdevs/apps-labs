@@ -46,6 +46,7 @@ build/build-images.sh both        # the DAC and the LCM router image
 lab/build.sh build                # the VM apps-lab with both routers, checked
 lab/build.sh status
 lab/build.sh router bpibroadband-dac        # a shell in a router
+apps/build.sh && lab/build.sh apps          # the applications, onto the VM's bundle server
 ```
 
 ## Layout
@@ -55,6 +56,7 @@ lab/build.sh router bpibroadband-dac        # a shell in a router
 | `manifest/` | `apps-lab.xml`: every source the images are built from, at a commit |
 | `build/` | the Yocto workspace and the two image builds |
 | `lab/` | the VM: `build.sh` on the host, `scripts/` and `guest/` in the VM, `boardfarm/` its two-CPE configuration, `lab.env` its pins and sizes |
+| `apps/` | the applications' build: OCI bundles into `out/apps/` |
 | `doc/` | the plan and the guides |
 | `site/`, `pages/` | the landing page and its build; `.github/workflows/pages.yml` publishes it |
 | `yocto/`, `out/`, `tmp/` | the Yocto workspace, build outputs and reference clones; not in the repository |

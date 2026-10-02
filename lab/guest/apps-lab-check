@@ -81,6 +81,8 @@ check_router() {
     check 'Device.SoftwareModules. answers on rbus' \
         sh -c "lxc exec $name -- rbuscli getvalues Device.SoftwareModules. | grep -q 'Device.SoftwareModules'"
     check 'Device.SoftwareModules. answers on USP (obuspa -c get)' usp_get Device.SoftwareModules.
+    check "the router reaches the bundle server (http://10.$index.0.1:8080/)" \
+        in_router curl -fsS -o /dev/null --max-time 5 "http://10.$index.0.1:8080/"
 }
 
 for router in $APPS_LAB_ROUTERS; do

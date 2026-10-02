@@ -1,9 +1,9 @@
-# Applications: references and candidates
+# Applications: references, candidates, first results
 
-Where the frameworks and their example applications come from, and which
-applications the lab plans to build and run. A survey, made before any
-application has run in the lab: what is verified is said so, the rest is the
-plan for phases 3 and 4 of [the plan](plan.md).
+Where the frameworks and their example applications come from, which
+applications the lab plans to build and run, and what the first application
+showed on the DAC router. What is verified is said so; the rest is the plan for
+phases 3 to 5 of [the plan](plan.md).
 
 ## The frameworks' repositories
 
@@ -41,7 +41,7 @@ top level, fetched from a URL and run by crun.
 
 | Application | What it shows | Source | Build |
 | --- | --- | --- | --- |
-| `hello` | the smallest bundle: a shell loop that prints a heartbeat | the layer's `examples/hello-app` | busybox and glibc from the router image's own root filesystem; built once here (`hello.tar`, 3.8 MB), not yet installed |
+| `hello` | the smallest bundle: a shell loop that prints a heartbeat | the layer's `examples/hello-app` | `apps/build.sh hello`: busybox and glibc from the router image's own root filesystem (3.7 MB); runs on the DAC router, see below |
 | `tictactoe` | a web application: lighttpd serving a page on a port | the layer's `dac-image-tictactoe` | Yocto, `dac-bundle-image` class, in the router's build |
 | `lcm-webapp` | the same from a registry image, with the heartbeat cthulhu wants | the layer's `examples/lcm-webapp`, `examples/from-registry` | `docker buildx` for `linux/386`, exported and wrapped as a bundle |
 | `shell` | an application to look around a container from | `meta-dac-sdk-broadband` `dac-image-shell` | Yocto, the SDK's `dac-image-base` |
@@ -55,6 +55,55 @@ router's machine rather than for the Raspberry Pi the SDK names; whether its
 classes work unchanged in this workspace (they want `image-oci` from
 meta-virtualization and BundleGen with a platform template for the router) is
 not tried yet.
+
+## Build and serve
+
+```sh
+apps/build.sh               # the lab's applications as bundles, into out/apps/
+lab/build.sh apps           # onto the VM's bundle server; prints each router's URLs
+```
+
+The VM serves `/var/lib/apps-lab/apps` over HTTP on port 8080
+(`apps-lab-apps.service`). A router reaches it on its WAN side, at the VM's
+address on the router's WAN bridge: `http://10.101.0.1:8080/hello.tar` from
+`bpibroadband-dac`, `http://10.102.0.1:8080/hello.tar` from `bpibroadband-lcm`.
+The acceptance check includes that the router reaches it.
+
+## First results: `hello` on the DAC router (1 October 2026)
+
+By hand, in `bpibroadband-dac` (`lab/build.sh router bpibroadband-dac`), each
+step observed:
+
+| Step | Command | Result |
+| --- | --- | --- |
+| Install | `dsmcli du.install default http://10.101.0.1:8080/hello.tar` | the deployment unit is `Installed`, the bundle is under `/home/root/destination/hello`, an execution unit (`Kn`) is `Idle` |
+| Start | `dsmcli eu.start Kn` | `DobbyTool list` shows the container `running`; the journal has its output, `hello-from-dsm #1 pid=1 host=Kn uname=Linux 6.8.0-142-generic i686` |
+| Stop, over rbus | `rbuscli method_values "Device.SoftwareModules.ExecutionUnit.1.SetRequestedState()" RequestedState string Idle` | `Stopping EU`; the status is `Idle`, Dobby has no container |
+| Start, over USP | `obuspa -c operate "Device.SoftwareModules.ExecutionUnit.1.SetRequestedState(RequestedState=Active)"` | the operation completes; the status is `Active`, the container runs again |
+| Read, over USP | `obuspa -c get Device.SoftwareModules.` | the execution environments, the deployment unit with its URL and status, the execution unit |
+| Install, over rbus | `rbuscli method_values "Device.SoftwareModules.InstallDU()" URL string http://10.101.0.1:8080/hello.tar ExecutionEnvRef string default` | reaches DSM (`Package already installed`, as it was) |
+| Uninstall | `dsmcli du.uninstall http://10.101.0.1:8080/hello.tar` | the bundle is removed from `/home/root/destination` |
+
+So an application runs four deep, a crun container in the router container in
+the VM on the host, and all three management paths reach it.
+
+What this DSM does differently from what its documentation or the data model
+says, for the tests to take into account:
+
+- **Bundles come over HTTP only.** `dsmcli du.install default hello` with
+  `hello.tar` in `/home/root/repo` fails with `Local install not implemented,
+  please use http`, and leaves a deployment unit in the state `Undefined` that
+  `du.uninstall` does not remove.
+- **A deployment unit's identity is its URL**: `du.uninstall` takes the URL the
+  unit was installed from.
+- **The references between the tables are off by one**: the second deployment
+  unit, installed in the first execution environment with the first execution
+  unit, reports `ExecutionEnvRef` `…ExecEnv.2` and `ExecutionUnitList`
+  `…ExecutionUnit.2`.
+- **`DeploymentUnit.{i}.Uninstall()` over rbus** is not verified: `rbuscli
+  method_values` wants arguments it does not have; another way to call it is to
+  be found.
+- The execution unit's name is generated (`Kn`), not the bundle's.
 
 ## Managing them
 

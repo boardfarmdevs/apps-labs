@@ -1,0 +1,13 @@
+[Unit]
+Description=Apps lab: the bundle server (the routers fetch applications from it over HTTP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# A router reaches the VM at its WAN bridge's address: http://10.10<cpe>.0.1:8080/<bundle>.tar
+ExecStart=/usr/bin/python3 -m http.server 8080 --directory /var/lib/apps-lab/apps
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

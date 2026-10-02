@@ -257,8 +257,11 @@ its own scripts; they are candidates for a fix where they belong.
 - **Wi-Fi.** The routers run without a radio. OneWifi and the EasyMesh services
   are in the image and have nothing to drive; they are left as they are.
 - **The LCM build** has not been done on this host from these pins; the recipe
-  for it comes from the layer's `doc/dac-lcm`. Expect fixes on the way, which go
-  to the layer when they are the layer's.
+  for it comes from the layer's `doc/dac-lcm`, which was written against the LCM
+  of prplOS 3.1.0, while the apps toolkit now names prplware 4.1.0. The first
+  difference showed in cthulhu (the layer's cgroup v2 patch no longer applies to
+  code that has its own cgroup v2 support); more may follow, in the build and at
+  run time. Fixes go to the layer when they are the layer's.
 - **Both runtimes in one image** is not possible: the toolkit selects one at
   build time, hence two images and two routers.
 - **`/apps` storage.** The toolkit wants a dedicated writable partition for
@@ -269,9 +272,13 @@ its own scripts; they are candidates for a fix where they belong.
 
 ## Status
 
+As of 1 October 2026.
+
 | Phase | Status |
 | --- | --- |
 | 0 | done |
-| 1 | in progress |
-| 2 | in progress |
-| 3 to 6 | not started |
+| 1 | the DAC image is built (14 minutes, from the EasyMesh lab's sstate but for two recipes); the LCM image's first build is running: cthulhu did not compile with the layer's cgroup patch, which `build/lcm.conf` now leaves out |
+| 2 | the VM `apps-lab` runs on rev140 with `bpibroadband-dac`: its check passes (WAN, DHCP, internet, LAN client, DSM, Dobby, USP agent, bundle server), also after the VM is stopped and started, twice. `bpibroadband-lcm` waits for its image; its Boardfarm slot is up. A build of the VM from nothing with the scripts as they are now is still to be repeated |
+| 3 | DAC: `hello` installed, started, stopped and uninstalled by hand, over `dsmcli`, rbus and USP ([applications.md](applications.md)). LCM: not started |
+| 4 | started: `apps/build.sh` builds `hello`; the VM serves the bundles |
+| 5 and 6 | not started, but for the site's first version |

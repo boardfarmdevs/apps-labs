@@ -88,7 +88,7 @@ bundle and the lab's scripts into it, and runs the numbered steps of
 | `20-lab-host.sh` | the Boardfarm checkout and its tools, the lab's configuration, the routers' LXD pool |
 | `30-boardfarm.sh` | `bf-lab setup` for two CPE slots: Kea, WAN gateway and LAN client each |
 | `40-routers.sh` | `apps-lab-router deploy` per router, then the LAN clients |
-| `50-runtime.sh` | the service that brings the lab back on boot |
+| `50-runtime.sh` | the service that brings the lab back on boot, and the bundle server |
 
 Then it reboots the VM, lets the runtime service reconstruct the lab, and runs
 the acceptance check. A lab with one router, while the other image is not built
@@ -108,7 +108,9 @@ lab/build.sh stop
 lab/build.sh start
 lab/build.sh router bpibroadband-lcm        # a shell in a router
 lab/build.sh router bpibroadband-dac rbuscli getvalues Device.SoftwareModules.
-lab/build.sh deploy                         # new images, or changed lab scripts, into the VM
+lab/build.sh update                         # changed lab scripts into the VM, routers untouched
+lab/build.sh deploy                         # update, then the routers again from their images
+lab/build.sh apps                           # the bundles of out/apps onto the VM's bundle server
 lab/build.sh deploy --fresh bpibroadband-dac   # that router again, as a new device
 lab/build.sh delete
 ```
@@ -143,7 +145,8 @@ two things in its root filesystem (see "Found on the way" in the
 - the slot's LAN client has a lease from the router and reaches the router and
   the internet through it;
 - the framework's services and the USP agent run, and `Device.SoftwareModules.`
-  answers on rbus and on USP (`obuspa -c get`).
+  answers on rbus and on USP (`obuspa -c get`);
+- the router reaches the bundle server.
 
 Then Boardfarm's own `bf-lab status`: every provider answers on Docker and on SSH.
 

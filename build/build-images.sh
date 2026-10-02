@@ -6,6 +6,8 @@
 #
 # dac  the apps toolkit's default runtime (DSM, Dobby, crun)
 # lcm  the prpl lifecycle manager (meta-amx, meta-lcm; build/lcm.conf)
+#
+# BITBAKE_OPTIONS=-k keeps a build going past a failed recipe, to see every failure at once.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -95,7 +97,8 @@ for flavor in dac lcm; do
         grep -Ex "(export )?RDK_BB_APPS_TOOLKIT_CRUNTIME=\"$runtime\"" "$record/environment.txt"
         cp conf/local.conf conf/bblayers.conf "$record/"
         printf 'Starting BitBake for %s (%s); log: %s/build.log\n' "$target" "$flavor" "$record"
-        bitbake -R "$workspace/clean-build.conf" "$target" 2>&1 | tee "$record/build.log"
+        # shellcheck disable=SC2086  # BITBAKE_OPTIONS is a list of options, e.g. -k
+        bitbake -R "$workspace/clean-build.conf" ${BITBAKE_OPTIONS:-} "$target" 2>&1 | tee "$record/build.log"
         image=$(readlink -f "tmp/deploy/images/$machine/$target-$machine.lxc.tar.bz2")
         test -f "$image"
         printf '%s\n' "$image" > "$record/image"

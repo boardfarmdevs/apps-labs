@@ -146,11 +146,13 @@
         <tr><td>LCM image</td><td class="state wait">Building</td>
           <td>Its first build: the framework switch changes the distro features, so little comes from sstate.</td></tr>
         <tr><td>Lab VM, DAC router</td><td class="state done">Checked</td>
-          <td><code>bpibroadband-dac</code> takes its WAN address from its own Kea server, reaches the internet through its WAN gateway, and serves its LAN client, which reaches the internet through it. DSM, Dobby and the USP agent run; <code>Device.SoftwareModules.</code> answers on rbus and on USP.</td></tr>
+          <td><code>bpibroadband-dac</code> takes its WAN address from its own Kea server, reaches the internet through its WAN gateway, and serves its LAN client, which reaches the internet through it. DSM, Dobby and the USP agent run; <code>Device.SoftwareModules.</code> answers on rbus and on USP. The lab comes back by itself when the VM is stopped and started.</td></tr>
         <tr><td>Lab VM, LCM router</td><td class="state wait">Next</td>
           <td>Its Boardfarm slot is up; the router follows its image.</td></tr>
-        <tr><td>Applications</td><td class="state wait">Next</td>
-          <td>One application installed and started on each router, then the application build and the bundle server.</td></tr>
+        <tr><td>Applications, DAC</td><td class="state done">Running</td>
+          <td>The first application, <code>hello</code>, is installed from the lab's bundle server, started, stopped and uninstalled on <code>bpibroadband-dac</code>, over <code>dsmcli</code>, rbus and USP: a crun container in the router container in the VM. More in <a href="https://github.com/boardfarmdevs/apps-labs/blob/main/doc/applications.md">the applications notes</a>.</td></tr>
+        <tr><td>Applications, LCM</td><td class="state wait">Next</td>
+          <td>The same on <code>bpibroadband-lcm</code>, then the applications of RDK's own SDK (<code>shell</code>, <code>iperf3</code>, <code>speedtest</code>).</td></tr>
         <tr><td>Tests</td><td class="state wait">Planned</td>
           <td>The lifecycle suite: install, start, observe, stop, uninstall, over rbus, the frameworks' own tools and USP.</td></tr>
       </tbody>
@@ -176,7 +178,9 @@ lab/build.sh router bpibroadband-dac        # a shell in a router</code></pre>
 <pre><code>rbuscli getvalues Device.SoftwareModules.
 obuspa -c get Device.SoftwareModules.
 rbuscli method_values "Device.SoftwareModules.InstallDU()" \
-    URL string http://&lt;server&gt;/hello.tar ExecutionEnvRef string default</code></pre>
+    URL string http://10.101.0.1:8080/hello.tar ExecutionEnvRef string default
+obuspa -c operate "Device.SoftwareModules.ExecutionUnit.1.SetRequestedState(RequestedState=Active)"
+DobbyTool list</code></pre>
     <p>Building, operating and checking the lab is in
     <a href="https://github.com/boardfarmdevs/apps-labs/blob/main/doc/build.md">the build guide</a>.</p>
   </section>
@@ -184,7 +188,8 @@ rbuscli method_values "Device.SoftwareModules.InstallDU()" \
   <section id="reference">
     <h2>Reference</h2>
     <ul class="refs">
-      <li><a href="https://github.com/boardfarmdevs/apps-labs">apps-labs</a>: this repository; <a href="https://github.com/boardfarmdevs/apps-labs/blob/main/doc/plan.md">the plan</a> and <a href="https://github.com/boardfarmdevs/apps-labs/blob/main/doc/build.md">the build guide</a></li>
+      <li><a href="https://github.com/boardfarmdevs/apps-labs">apps-labs</a>: this repository; <a href="https://github.com/boardfarmdevs/apps-labs/blob/main/doc/plan.md">the plan</a>, <a href="https://github.com/boardfarmdevs/apps-labs/blob/main/doc/build.md">the build guide</a> and <a href="https://github.com/boardfarmdevs/apps-labs/blob/main/doc/applications.md">the applications notes</a></li>
+      <li>RDK's side: <a href="https://github.com/rdkcentral/meta-rdk-broadband-apps">meta-rdk-broadband-apps</a> (the toolkit), <a href="https://github.com/rdkcentral/DSM">DSM</a>, <a href="https://github.com/rdkcentral/Dobby">Dobby</a>, <a href="https://github.com/rdkcentral/meta-dac-sdk-broadband">meta-dac-sdk-broadband</a> (the application SDK and its examples)</li>
       <li><a href="https://github.com/boardfarmdevs/meta-cmf-bananapi-vcpe">meta-cmf-bananapi-vcpe</a>: the layer the router images are built with, and its <a href="https://github.com/boardfarmdevs/meta-cmf-bananapi-vcpe/tree/main/doc/dac-lcm">DAC and LCM notes</a></li>
       <li><a href="https://boardfarmdevs.github.io/easymesh-labs/">EasyMesh labs</a>: the labs this one derives from</li>
       <li><a href="https://rdkcentral.github.io/meta-rdk-broadband-apps/">RDK Broadband Apps toolkit</a>: the frameworks' own documentation</li>
