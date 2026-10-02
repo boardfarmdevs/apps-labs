@@ -9,8 +9,8 @@ the VM's bundle server, starts it, stops it and uninstalls it through that path
 alone, and after each step observes the result where it shows: the data model
 over rbus, the container runtime, the application's output.
 
-The paths, on a DAC router (DSM, Dobby):
-    native   dsmcli
+The paths:
+    native   the framework's own tool: dsmcli on a DAC router, ba-cli on an LCM router
     rbus     rbuscli on Device.SoftwareModules.
     usp      obuspa -c, the USP controller on the router itself
 
@@ -23,6 +23,7 @@ import shlex
 import subprocess
 import sys
 import time
+import uuid
 
 PATHS = ("native", "rbus", "usp")
 DM = "Device.SoftwareModules."
@@ -88,6 +89,7 @@ class Dac:
     identifier of its output in the journal."""
 
     environment = "default"
+    unit_field = "Name"    # what the runtime calls the unit's container
 
     def __init__(self, router):
         self.router = router
@@ -132,7 +134,7 @@ class Dac:
     def set_state(self, path, unit, state):
         if path == "native":
             return self.dsmcli(f"eu.{'start' if state == 'Active' else 'stop'} {unit}")
-        number = self.router.instance("ExecutionUnit", "Name", unit)
+        number = self.router.instance("ExecutionUnit", self.unit_field, unit)
         method = f"{DM}ExecutionUnit.{number}.SetRequestedState"
         if path == "rbus":
             return self.router.sh(f'rbuscli method_values "{method}()" RequestedState string {state}')
@@ -186,7 +188,90 @@ class Dac:
         return self.router.sh(f"ls -d /home/root/destination/{bundle} 2>/dev/null").strip()
 
 
-FRAMEWORKS = {"dac": Dac}
+class Lcm(Dac):
+    """timingila, celephais and cthulhu, with crun. An execution unit's EUID is the
+    container's name in crun; its output is in the journal under cthulhu's name."""
+
+    environment = DM + "ExecEnv.1."
+    unit_field = "EUID"
+    services = ("lcm-cthulhu", "lcm-timingila", "lcm-celephais")
+
+    def ba_cli(self, call):
+        return self.router.sh(f"ba-cli {shlex.quote(call)}")
+
+    def problem(self):
+        for unit in self.services:
+            if self.router.sh(f"systemctl is-active {unit}").strip() != "active":
+                return f"{unit} does not run"
+        if self.router.rows("ExecEnv", "Status").get(1) != "Up":
+            return "the execution environment is not Up"
+        return ""
+
+    def reset(self):
+        """Start the three services again with nothing installed, and the USP agent."""
+        self.router.sh(
+            f"systemctl stop {' '.join(reversed(self.services))}; "
+            "for c in $(crun list -q 2>/dev/null); do crun delete -f $c; done; "
+            "rm -rf /lcm/cthulhu /lcm/celephais /etc/config/cthulhu /etc/config/celephais /etc/config/timingila; "
+            f"systemctl start {' '.join(self.services)}; systemctl restart usp-pa"
+        )
+        wait(lambda: not self.problem(), 90)
+        wait(lambda: "=>" in self.router.sh(f"obuspa -c get {DM}ExecEnvNumberOfEntries"), 60)
+
+    def leftovers(self):
+        units = sorted(self.router.rows("DeploymentUnit", "URL").values())
+        containers = self.router.sh("crun list -q 2>/dev/null").split()
+        return units + containers
+
+    def install(self, path, url):
+        # The UUID has to be a version 5 one; a new one each time makes a new unit.
+        # AutoStart=false leaves the unit Idle, as DSM does.
+        identifier = uuid.uuid5(uuid.NAMESPACE_URL, f"{url}#{time.time()}")
+        arguments = {"URL": url, "UUID": str(identifier), "ExecutionEnvRef": self.environment, "AutoStart": False}
+        if self.privileged:
+            arguments["Privileged"] = True
+        if path == "native":
+            listed = ", ".join(
+                f"{name}={str(value).lower() if isinstance(value, bool) else chr(34) + value + chr(34)}"
+                for name, value in arguments.items()
+            )
+            return self.ba_cli(f"{DM}InstallDU({listed})")
+        if path == "rbus":
+            listed = " ".join(
+                f"{name} {'boolean' if isinstance(value, bool) else 'string'} "
+                f"{str(value).lower() if isinstance(value, bool) else shlex.quote(value)}"
+                for name, value in arguments.items()
+            )
+            return self.router.sh(f'rbuscli method_values "{DM}InstallDU()" {listed}')
+        listed = ",".join(
+            f"{name}={str(value).lower() if isinstance(value, bool) else value}" for name, value in arguments.items()
+        )
+        return self.operate(f"{DM}InstallDU({listed})")
+
+    def set_state(self, path, unit, state):
+        if path != "native":
+            return super().set_state(path, unit, state)
+        number = self.router.instance("ExecutionUnit", self.unit_field, unit)
+        return self.ba_cli(f'{DM}ExecutionUnit.{number}.SetRequestedState(RequestedState="{state}")')
+
+    def uninstall(self, path, url):
+        if path != "native":
+            return super().uninstall(path, url)
+        number = self.router.instance("DeploymentUnit", "URL", url)
+        return self.ba_cli(f"{DM}DeploymentUnit.{number}.Uninstall()")
+
+    def container_runs(self, unit):
+        return bool(re.search(rf"^{re.escape(unit)}\s+\d+\s+running", self.router.sh("crun list"), re.M))
+
+    def output_since(self, unit, started, text):
+        journal = self.router.sh(f"journalctl --no-pager -o cat --since @{started}")
+        return [line for line in journal.splitlines() if text in line]
+
+    def files(self, bundle):
+        return self.router.sh("ls -A /lcm/celephais/bundles 2>/dev/null").strip()
+
+
+FRAMEWORKS = {"dac": Dac, "lcm": Lcm}
 
 
 class Run:
@@ -211,7 +296,10 @@ def wait(condition, seconds=60, every=1.0):
 
 def lifecycle(run, router, framework, path, bundle):
     url = f"{router.server}/{bundle}.tar"
-    unit_status = lambda unit: router.rows("ExecutionUnit", "Status").get(router.instance("ExecutionUnit", "Name", unit))
+    names = lambda: set(router.rows("ExecutionUnit", framework.unit_field).values())
+    unit_status = lambda unit: router.rows("ExecutionUnit", "Status").get(
+        router.instance("ExecutionUnit", framework.unit_field, unit)
+    )
     installed = lambda: router.rows("DeploymentUnit", "Status").get(router.instance("DeploymentUnit", "URL", url))
     print(f"{router.name} ({router.framework}), {path}: {url}")
 
@@ -222,12 +310,12 @@ def lifecycle(run, router, framework, path, bundle):
             return
     if not run.check("the router can fetch the bundle", "200" in router.sh(f"curl -sI --max-time 5 {url} | head -n 1")):
         return
-    units_before = set(router.rows("ExecutionUnit", "Name").values())
+    units_before = names()
 
     reply = framework.install(path, url)
     if not run.check("install: the deployment unit is Installed", wait(lambda: installed() == "Installed"), reply.strip()[-200:]):
         return
-    new_units = wait(lambda: set(router.rows("ExecutionUnit", "Name").values()) - units_before, 30)
+    new_units = wait(lambda: names() - units_before, 30)
     if not run.check("install: it has one new execution unit", len(new_units or ()) == 1, str(new_units)):
         return
     unit = new_units.pop()
@@ -236,7 +324,8 @@ def lifecycle(run, router, framework, path, bundle):
 
     started = int(router.sh("date +%s").strip())
     reply = framework.set_state(path, unit, "Active")
-    run.check("start: the execution unit is Active", wait(lambda: unit_status(unit) == "Active", 30), reply.strip()[-200:])
+    active = wait(lambda: unit_status(unit) == "Active", 30)
+    run.check("start: the execution unit is Active", active, f"its Status is {unit_status(unit)}; {reply.strip()[-120:]}")
     run.check("start: the runtime has the container running", wait(lambda: framework.container_runs(unit), 30))
     if bundle in OUTPUT:
         lines = wait(lambda: framework.output_since(unit, started, OUTPUT[bundle]), 30)
@@ -252,7 +341,8 @@ def lifecycle(run, router, framework, path, bundle):
         )
 
     reply = framework.set_state(path, unit, "Idle")
-    run.check("stop: the execution unit is Idle", wait(lambda: unit_status(unit) == "Idle", 30), reply.strip()[-200:])
+    idle = wait(lambda: unit_status(unit) == "Idle", 30)
+    run.check("stop: the execution unit is Idle", idle, f"its Status is {unit_status(unit)}; {reply.strip()[-120:]}")
     run.check("stop: the runtime has no such container", wait(lambda: not framework.container_runs(unit), 30))
     if bundle in PAGES:
         run.check("stop: the page is gone", wait(lambda: PAGES[bundle][1] not in router.lan_page(PAGES[bundle][0]), 30))
@@ -266,7 +356,7 @@ def lifecycle(run, router, framework, path, bundle):
     run.check("uninstall: the deployment unit is gone", wait(lambda: not installed(), 30), reply.strip()[-200:])
     run.check(
         "uninstall: its execution unit is gone",
-        wait(lambda: unit not in router.rows("ExecutionUnit", "Name").values(), 30),
+        wait(lambda: unit not in names(), 30),
     )
     run.check("uninstall: the bundle's files are gone", wait(lambda: not framework.files(bundle), 30))
 
@@ -276,6 +366,10 @@ def main():
     parser.add_argument("router")
     parser.add_argument("--path", action="append", choices=PATHS, help="default: every path")
     parser.add_argument("--bundle", default="hello")
+    parser.add_argument(
+        "--privileged", action="store_true",
+        help="LCM: install with Privileged=true (cthulhu then makes no user for the container)",
+    )
     args = parser.parse_args()
     routers = lab_routers()
     if args.router not in routers:
@@ -285,6 +379,7 @@ def main():
         raise SystemExit(f"the {framework_name} framework has no lifecycle test yet")
     router = Router(args.router, framework_name, cpe)
     framework = FRAMEWORKS[framework_name](router)
+    framework.privileged = args.privileged
     run = Run()
     print(f"{router.name}: starting the framework again with nothing installed")
     framework.reset()

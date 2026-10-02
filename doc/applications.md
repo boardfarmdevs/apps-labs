@@ -1,9 +1,9 @@
-# Applications: references, candidates, first results
+# Applications: references, candidates, results
 
 Where the frameworks and their example applications come from, which
-applications the lab plans to build and run, and what the first application
-showed on the DAC router. What is verified is said so; the rest is the plan for
-phases 3 to 5 of [the plan](plan.md).
+applications the lab builds and runs, and what running them showed on the DAC
+and on the LCM router. What is verified is said so; the rest is the plan for
+phases 4 and 5 of [the plan](plan.md).
 
 ## The frameworks' repositories
 
@@ -41,8 +41,8 @@ top level, fetched from a URL and run by crun.
 
 | Application | What it shows | Source | Build |
 | --- | --- | --- | --- |
-| `hello` | the smallest bundle: a shell loop that prints a heartbeat | the layer's `examples/hello-app` | `apps/build.sh hello`: busybox and glibc from the router image's own root filesystem (3.7 MB); runs on the DAC router, see below |
-| `tictactoe` | a web application: lighttpd serving the layer's tic-tac-toe page on port 8090, with a heartbeat on stdout; the container shares the router's network, so the page is at the router's addresses | the layer's `tictactoe-content`; `apps/tictactoe/` (server configuration, entrypoint, `config.json`) | `apps/build.sh tictactoe`: lighttpd, its modules and the libraries they need, from the router image's own root filesystem (7.3 MB); runs on the DAC router, the LAN client gets the page |
+| `hello` | the smallest bundle: a shell loop that prints a heartbeat | the layer's `examples/hello-app` | `apps/build.sh hello`: busybox and glibc from the router image's own root filesystem (3.7 MB); runs on both routers |
+| `tictactoe` | a web application: lighttpd serving the layer's tic-tac-toe page on port 8090, with a heartbeat on stdout; the container shares the router's network, so the page is at the router's addresses | the layer's `tictactoe-content`; `apps/tictactoe/` (server configuration, entrypoint, `config.json`) | `apps/build.sh tictactoe`: lighttpd, its modules and the libraries they need, from the router image's own root filesystem (7.3 MB); runs on both routers, the LAN client gets the page |
 | `lcm-webapp` | the same from a registry image, with the heartbeat cthulhu wants | the layer's `examples/lcm-webapp`, `examples/from-registry` | `docker buildx` for `linux/386`, exported and wrapped as a bundle |
 | `shell` | an application to look around a container from | `meta-dac-sdk-broadband` `dac-image-shell` | Yocto, the SDK's `dac-image-base` |
 | `iperf3` | a network application with arguments: throughput from inside a container to the WAN or LAN side | `meta-dac-sdk-broadband` `dac-image-iperf3` | Yocto, the SDK's `dac-image-base`; the lab's WAN gateway or LAN client as the server |
@@ -102,11 +102,20 @@ uninstalls it through that path alone. After each step it observes the result
 where it shows: the deployment and execution units over rbus, the container in
 Dobby, the application's output in the journal, the bundle's files.
 
-On `bpibroadband-dac` every check passes on all three paths, for `hello` twice
-in a row and for `tictactoe` (`--bundle tictactoe`), where the test also has the
-slot's LAN client fetch the page from the router's LAN address while the
-application runs, and finds it gone after the stop (1 October 2026). Uninstall works over rbus (`rbuscli method_noargs
-"Device.SoftwareModules.DeploymentUnit.{i}.Uninstall()"`) and over USP as well.
+Results (1 October 2026), for `hello` and for `tictactoe` (`--bundle tictactoe`,
+where the test also has the slot's LAN client fetch the page from the router's
+LAN address while the application runs, and finds it gone after the stop):
+
+| Router | Own tool | rbus | USP |
+| --- | --- | --- | --- |
+| `bpibroadband-dac` | every check passes | every check passes | every check passes |
+| `bpibroadband-lcm` | passes but for the unit's `Status` | passes but for the unit's `Status` | passes but for the unit's `Status` |
+
+On the LCM router the application is installed, runs (crun has the container
+running, its output is in the journal, the LAN client gets the page), stops and
+is uninstalled on every path; the two checks that fail on each are the execution
+unit's `Status`, which stays `Starting` and then `Stopping` (below).
+
 
 ## What this DSM does differently
 
@@ -143,6 +152,42 @@ From its documentation or from the data model, for whoever uses the DAC router:
   ([DSM 73c6a95](https://github.com/rdkcentral/DSM/commit/73c6a952786c8a7660b44389f96612e9a912456f))
   is in the image: the pinned `meta-rdk` builds DSM at `be204cb`, its merge.
 
+## What this LCM does differently
+
+The LCM image is the layer's recipe for it with the LCM the apps toolkit now
+names (prplware 4.1.0: cthulhu 4.3.0, timingila 3.1.5, celephais 1.1.0, crun
+1.6). What it took, and what remains:
+
+- **Three changes to the build** (`build/lcm.conf`), each found by a failure:
+  the layer's cthulhu cgroup patch is left out (it is for an older cthulhu; this
+  one handles cgroup v2 and its execution environment comes `Up`);
+  `timingila-celephais` is taken at v1.1.0, because the pinned v1.0.1 does not
+  answer the validation step timingila puts before a pull, so `InstallDU()` hung
+  and timed out; and `shadow` is in the image, because cthulhu makes a user for
+  every container not installed as privileged (`useradd -r cthulhu_<n>`). Without
+  `useradd` an install ends with a deployment unit stuck in `Installing` and an
+  execution unit with the fault `Cthulhu: Ghost` that cannot be uninstalled;
+  `InstallDU(…, Privileged=true)` works without it.
+- **`InstallDU()` wants more**: a `UUID` that is an RFC 4122 version 5 one, and
+  `ExecutionEnvRef` as the environment's path, `Device.SoftwareModules.ExecEnv.1.`
+  (DSM takes the name, `default`).
+- **A unit starts by itself** unless installed with `AutoStart=false`.
+- **The unit's `Status` lags**: with the container running in crun it stays
+  `Starting`, and after the stop `Stopping`, for as long as watched (minutes).
+  Cthulhu's own `Cthulhu.Container.Instances.{i}.Status` says the same.
+- **A stopped unit does not start again**: `crun start` on the stopped container
+  fails (`Failed to start container …, rc = -1`). Uninstall and install again.
+- **Over USP, boolean arguments do not arrive**: `Privileged=true` and
+  `AutoStart=false` in `obuspa -c operate "…InstallDU(…)"` reach cthulhu as
+  `false` and unset, so a unit installed over USP is unprivileged and starts by
+  itself. Over rbus (`… Privileged boolean true`) and with `ba-cli` they arrive.
+- The execution unit's name is its EUID (a UUID); the container in `crun list`
+  has that name, its files are under `/lcm/cthulhu/bundles/<EUID>`, the bundle
+  under `/lcm/celephais/bundles/`. The application's output is in the router's
+  journal under cthulhu's name.
+- celephais takes a bundle's name, version and vendor from annotations in its
+  `config.json`; the lab's bundles have none and show as `Unknown`.
+
 ## Managing them
 
 The toolkit's own verification, on a Banana Pi, is the sequence the lab's tests
@@ -160,5 +205,8 @@ rbuscli method_values "Device.SoftwareModules.ExecutionUnit.1.SetRequestedState(
 ```
 
 and its counterparts: `dsmcli du.install|eu.start|eu.stop` on DAC,
-`ba-cli "Device.SoftwareModules.InstallDU(URL=…, UUID=…, ExecutionEnvRef=Device.SoftwareModules.ExecEnv.1.)"`
-on LCM, `obuspa -c operate` and `obuspa -c get` over USP on both.
+`ba-cli 'Device.SoftwareModules.InstallDU(URL="…", UUID="…", ExecutionEnvRef="Device.SoftwareModules.ExecEnv.1.", AutoStart=false)'`
+and `ba-cli 'Device.SoftwareModules.ExecutionUnit.1.SetRequestedState(RequestedState="Active")'`
+on LCM, `obuspa -c operate` and `obuspa -c get` over USP on both. On LCM,
+`crun list` is what `DobbyTool list` is on DAC. `tests/lifecycle.py` has every
+one of these as it is run.

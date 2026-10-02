@@ -59,19 +59,43 @@ pinned() {    # container network: the network's interface in the container is f
         2>/dev/null | grep -qx eth1
 }
 
+connected() {    # container network
+    docker inspect "$1" -f '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}} {{end}}' 2>/dev/null |
+        grep -qw -- "$2"
+}
+
 # Connect a container's slot network again as eth1 (with the address bf-lab gives a server
-# there) and start the container again. On a Docker that cannot fix the name: the way
-# bf-lab deploys it, on the management network alone, then the slot's network.
+# there) and start the container again, so that its init configures the interface. A
+# connect can fail while the container is busy with the interface (its init removes the
+# address Docker has just given it, and Docker then finds no route to the network's
+# gateway), so it is tried a few times. On a Docker that cannot fix the name: the way bf-lab
+# deploys it, on the management network alone, then the slot's network.
 reattach() {    # container network [docker network connect options]
-    local container=$1 network=$2
+    local container=$1 network=$2 attempt error=
     shift 2
-    docker network disconnect "$network" "$container" >/dev/null 2>&1 || true
-    if docker network connect --driver-opt "$ifname_option=eth1" "$@" "$network" "$container" 2>/dev/null; then
+    for attempt in 1 2 3 4 5; do
+        docker network disconnect "$network" "$container" >/dev/null 2>&1 || true
+        # Docker makes the network it connects the default route, and gives up when the
+        # container has one of its own making (the WAN gateway's). The restart below
+        # brings the container's own routes back.
+        docker exec "$container" ip route del default >/dev/null 2>&1 || true
+        if error=$(docker network connect --driver-opt "$ifname_option=eth1" "$@" "$network" "$container" 2>&1); then
+            docker restart -t 2 "$container" >/dev/null
+            return 0
+        fi
+        sleep 2
+    done
+    echo "$container: $network not connected with a fixed interface name: $error" >&2
+    for attempt in 1 2 3 4 5; do
+        docker network disconnect "$network" "$container" >/dev/null 2>&1 || true
         docker restart -t 2 "$container" >/dev/null
-    else
-        docker restart -t 2 "$container" >/dev/null
-        docker network connect "$@" "$network" "$container"
-    fi
+        sleep 3
+        if error=$(docker network connect "$@" "$network" "$container" 2>&1); then
+            return 0
+        fi
+    done
+    echo "$container: $network not connected: $error" >&2
+    return 1
 }
 
 slot_connect_options() {    # kind cpe: what bf-lab passes when it connects the slot's network
@@ -113,6 +137,8 @@ slot_problem() {
     [ "$(bridge_of "lan-cpe$i")" = "br-lan$((200 + i))" ] && ip link show "br-lan$((200 + i))" >/dev/null 2>&1 ||
         { echo "no bridge br-lan$((200 + i)) for the network lan-cpe$i"; return; }
     for container in dhcp wan lan; do
+        connected "$container-cpe$i" "$(slot_network "$container" "$i")" ||
+            { echo "$container-cpe$i is not connected to the network $(slot_network "$container" "$i")"; return; }
         eth0_is_management "$container-cpe$i" "$container" ||
             { echo "$container-cpe$i: eth0 is not its management interface"; return; }
     done
@@ -167,7 +193,8 @@ repair_providers() {
             reattach_provider dhcp "$i" || true
         fi
         for kind in dhcp wan lan; do
-            if running "$kind-cpe$i" && ! eth0_is_management "$kind-cpe$i" "$kind"; then
+            if running "$kind-cpe$i" && { ! connected "$kind-cpe$i" "$(slot_network "$kind" "$i")" ||
+                    ! eth0_is_management "$kind-cpe$i" "$kind"; }; then
                 reattach_provider "$kind" "$i" || true
             fi
         done

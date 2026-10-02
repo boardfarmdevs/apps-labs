@@ -52,7 +52,14 @@ each in its own build directory:
 | Framework | Build directory | What differs |
 | --- | --- | --- |
 | `dac` | `yocto/build-qemux86bpibroadband-dac` | nothing: the apps toolkit's default runtime. Without `meta-amx`, which the BSP's setup adds whenever the workspace has it, so that the image is the EasyMesh lab's and comes from its sstate. |
-| `lcm` | `yocto/build-qemux86bpibroadband-lcm` | `meta-amx` and `meta-lcm` in `conf/bblayers.conf`, and `build/lcm.conf` as a marked block in `conf/local.conf` |
+| `lcm` | `yocto/build-qemux86bpibroadband-lcm` | `meta-amx` and `meta-lcm` in `conf/bblayers.conf`, and `build/lcm.conf` as a marked block in `conf/local.conf`: the runtime switch, and what the LCM of prplware 4.1.0 needs beyond the layer's notes |
+
+The DAC image takes minutes: 98 % of its tasks come from the shared sstate. The
+LCM image's first build takes hours: its configuration changes nearly every
+signature, native tools included (12 % from sstate), so it compiles from source,
+clang and rust among the rest. It leaves its own sstate behind; a later change
+of one recipe rebuilds in about ten minutes. `BITBAKE_OPTIONS=-k` keeps a build
+going past a failed recipe.
 
 Each build leaves a record in `yocto/build-evidence/<framework>-<time>/`
 (`latest-<framework>` names the last): the manifest, the configuration, the
@@ -111,6 +118,7 @@ lab/build.sh router bpibroadband-dac rbuscli getvalues Device.SoftwareModules.
 lab/build.sh update                         # changed lab scripts into the VM, routers untouched
 lab/build.sh deploy                         # update, then the routers again from their images
 lab/build.sh apps                           # the bundles of out/apps onto the VM's bundle server
+lab/build.sh test bpibroadband-lcm          # the application lifecycle, over each management path
 lab/build.sh deploy --fresh bpibroadband-dac   # that router again, as a new device
 lab/build.sh delete
 ```
