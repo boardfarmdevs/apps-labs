@@ -279,6 +279,7 @@ As of 1 October 2026.
 | 0 | done |
 | 1 | the DAC image is built (14 minutes, from the EasyMesh lab's sstate but for two recipes); the LCM image's first build is running: cthulhu did not compile with the layer's cgroup patch, which `build/lcm.conf` now leaves out |
 | 2 | the VM `apps-lab` runs on rev140 with `bpibroadband-dac`: its check passes (WAN, DHCP, internet, LAN client, DSM, Dobby, USP agent, bundle server), also after the VM is stopped and started, twice. `bpibroadband-lcm` waits for its image; its Boardfarm slot is up. A build of the VM from nothing with the scripts as they are now is still to be repeated |
-| 3 | DAC: `hello` installed, started, stopped and uninstalled by hand, over `dsmcli`, rbus and USP ([applications.md](applications.md)). LCM: not started |
+| 3 | DAC: `hello` installed, started, stopped and uninstalled, over `dsmcli`, rbus and USP ([applications.md](applications.md)). LCM: not started |
 | 4 | started: `apps/build.sh` builds `hello`; the VM serves the bundles |
-| 5 and 6 | not started, but for the site's first version |
+| 5 | started: `tests/lifecycle.py` (`lab/build.sh test ROUTER`) passes on the DAC router over `dsmcli`, rbus and USP; LCM, faults and persistence are to come |
+| 6 | the site's first version is published |

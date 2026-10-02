@@ -30,6 +30,9 @@ Commands:
                        images; --fresh: with an empty /nvram
   apps                 the bundles of out/apps (apps/build.sh) onto the VM's bundle server;
                        prints the URL each router installs them from
+  test ROUTER [--path native|rbus|usp] [--bundle NAME]
+                       the application lifecycle on a router (tests/lifecycle.py): install,
+                       start, stop, uninstall over each management path
   router NAME [CMD...] a shell, or a command, in a router
   delete               delete the VM (its storage pool stays)
 
@@ -114,6 +117,7 @@ prepare_assets() {
         basename "$image" > "$assets/image-$framework"
     done
     tar -C "$root/lab" -cf "$assets/apps-lab.tar" boardfarm scripts guest
+    tar -C "$root" -rf "$assets/apps-lab.tar" tests
     for variable in "${settings[@]}"; do
         printf '%s="%s"\n' "$variable" "${!variable}"
     done > "$assets/apps-lab.env"
@@ -130,7 +134,7 @@ push_inputs() {
     run_root bash -euo pipefail -c "
         cd $guest_assets
         sha256sum -c --quiet SHA256SUMS
-        rm -rf $guest/boardfarm $guest/scripts $guest/guest
+        rm -rf $guest/boardfarm $guest/scripts $guest/guest $guest/tests
         tar -xf apps-lab.tar -C $guest
         install -m 0644 apps-lab.env /etc/default/apps-lab
         install -m 0755 $guest/guest/apps-lab-router $guest/guest/apps-lab-runtime \
@@ -257,6 +261,17 @@ push_apps() {
     done
 }
 
+# The application lifecycle test on a router, with the tests as they are in this checkout.
+test_router() {
+    [ $# -ge 1 ] || { echo "usage: $0 test ROUTER [--path native|rbus|usp] [--bundle NAME]" >&2; exit 2; }
+    instance_exists
+    [ "$(instance_state)" = RUNNING ] || { echo "$name is not running: $0 start" >&2; exit 1; }
+    wait_agent
+    run_root rm -rf "$guest/tests"
+    lxc file push -q -r "$root/tests" "$name$guest/"
+    run_root python3 "$guest/tests/lifecycle.py" "$@"
+}
+
 router_shell() {
     local router=${1:?router name}
     shift
@@ -284,6 +299,7 @@ case "${1:-}" in
     update) update_vm ;;
     deploy) deploy_routers "${@:2}" ;;
     apps) push_apps ;;
+    test) test_router "${@:2}" ;;
     router) router_shell "${@:2}" ;;
     delete) delete_vm ;;
     -h|--help|help|'') usage ;;

@@ -70,6 +70,9 @@ for flavor in dac lcm; do
     printf 'Preparing the %s image (%s, %s); evidence: %s\n' "$flavor" "$target" "$build" "$record"
     (
         trap 'status=$?; printf "%s\n" "$status" > "$record/exit-code"; date -u +%FT%TZ > "$record/finished"' EXIT
+        # a build that is killed must not leave the exit code of its last finished command
+        trap 'exit 143' TERM
+        trap 'exit 130' INT
         cd "$workspace"
         date -u +%FT%TZ > "$record/started"
         git -C "$root" rev-parse HEAD > "$record/lab-commit" 2>/dev/null || echo uncommitted > "$record/lab-commit"

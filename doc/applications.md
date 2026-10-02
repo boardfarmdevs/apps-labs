@@ -87,8 +87,26 @@ step observed:
 So an application runs four deep, a crun container in the router container in
 the VM on the host, and all three management paths reach it.
 
-What this DSM does differently from what its documentation or the data model
-says, for the tests to take into account:
+## The lifecycle test
+
+```sh
+lab/build.sh test bpibroadband-dac            # every path; or --path native|rbus|usp
+```
+
+`tests/lifecycle.py`, run in the VM. It starts the framework again with nothing
+installed, then for each path (`native`: `dsmcli`; `rbus`: `rbuscli`; `usp`:
+`obuspa -c`) installs `hello` from the bundle server, starts it, stops it and
+uninstalls it through that path alone. After each step it observes the result
+where it shows: the deployment and execution units over rbus, the container in
+Dobby, the application's output in the journal, the bundle's files.
+
+On `bpibroadband-dac` every check passes on all three paths, twice in a row
+(1 October 2026). Uninstall works over rbus (`rbuscli method_noargs
+"Device.SoftwareModules.DeploymentUnit.{i}.Uninstall()"`) and over USP as well.
+
+## What this DSM does differently
+
+From its documentation or from the data model, for whoever uses the DAC router:
 
 - **Bundles come over HTTP only.** `dsmcli du.install default hello` with
   `hello.tar` in `/home/root/repo` fails with `Local install not implemented,
@@ -100,10 +118,26 @@ says, for the tests to take into account:
   unit, installed in the first execution environment with the first execution
   unit, reports `ExecutionEnvRef` `…ExecEnv.2` and `ExecutionUnitList`
   `…ExecutionUnit.2`.
-- **`DeploymentUnit.{i}.Uninstall()` over rbus** is not verified: `rbuscli
-  method_values` wants arguments it does not have; another way to call it is to
-  be found.
-- The execution unit's name is generated (`Kn`), not the bundle's.
+- The execution unit's name is generated (`Kn`, `NX`, …), not the bundle's; it
+  is the container's name in Dobby and the identifier of its output in the
+  journal.
+- **DSM crashed once on an uninstall** (`terminate called after throwing an
+  instance of 'std::length_error'`), after its execution unit had been started
+  and stopped over USP; not reproduced since. Its unit says `Restart=no`, so the
+  framework is gone until `systemctl start dsm`.
+- **After a restart DSM can keep a package it no longer has**: started with a
+  package on disk, then told to uninstall it, it removes the files and the rows
+  but answers every later install of that URL with `Package already installed`.
+  Stopping DSM, emptying `/home/root/destination` and starting it again clears
+  it (what the test does before it begins).
+- **The USP agent can lose track of the execution units**: with a unit present
+  when `usp-pa` started, then uninstalled and installed again, the agent counted
+  no execution units and refused `SetRequestedState()` on the new one
+  (`instances are invalid`) until it was started again. With the table empty at
+  the agent's start, as in the test, it follows every install and uninstall.
+- The fix the toolkit's guide asks for
+  ([DSM 73c6a95](https://github.com/rdkcentral/DSM/commit/73c6a952786c8a7660b44389f96612e9a912456f))
+  is in the image: the pinned `meta-rdk` builds DSM at `be204cb`, its merge.
 
 ## Managing them
 
@@ -123,8 +157,4 @@ rbuscli method_values "Device.SoftwareModules.ExecutionUnit.1.SetRequestedState(
 
 and its counterparts: `dsmcli du.install|eu.start|eu.stop` on DAC,
 `ba-cli "Device.SoftwareModules.InstallDU(URL=…, UUID=…, ExecutionEnvRef=Device.SoftwareModules.ExecEnv.1.)"`
-on LCM, `obuspa -c operate` and `obuspa -c get` over USP on both. The toolkit's
-guide notes one DSM fix its DAC needs
-([DSM 73c6a95](https://github.com/rdkcentral/DSM/commit/73c6a952786c8a7660b44389f96612e9a912456f));
-whether the pinned image has it is checked when the first application is
-installed.
+on LCM, `obuspa -c operate` and `obuspa -c get` over USP on both.

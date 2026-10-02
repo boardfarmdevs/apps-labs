@@ -156,8 +156,8 @@
           <td>The first application, <code>hello</code>, is installed from the lab's bundle server, started, stopped and uninstalled on <code>bpibroadband-dac</code>, over <code>dsmcli</code>, rbus and USP: a crun container in the router container in the VM. More in <a href="https://github.com/boardfarmdevs/apps-labs/blob/main/doc/applications.md">the applications notes</a>.</td></tr>
         <tr><td>Applications, LCM</td><td class="state wait">Next</td>
           <td>The same on <code>bpibroadband-lcm</code>, then the applications of RDK's own SDK (<code>shell</code>, <code>iperf3</code>, <code>speedtest</code>).</td></tr>
-        <tr><td>Tests</td><td class="state wait">Planned</td>
-          <td>The lifecycle suite: install, start, observe, stop, uninstall, over rbus, the frameworks' own tools and USP.</td></tr>
+        <tr><td>Tests</td><td class="state done">Started</td>
+          <td>The lifecycle test (install, start, observe, stop, uninstall) passes on the DAC router over each path: <code>dsmcli</code>, rbus and USP. LCM, faults and persistence across a reboot are to come.</td></tr>
       </tbody>
     </table></div>
     <p>The phases, what the first builds showed and what is still open are in
