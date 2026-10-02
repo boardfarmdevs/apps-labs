@@ -31,6 +31,7 @@ same Boardfarm, the same build stages.
 | --- | --- |
 | [doc/plan.md](doc/plan.md) | what is built, how it derives from the EasyMesh lab, the phases and their status |
 | [doc/build.md](doc/build.md) | build the images and the VM, operate and check the lab |
+| [doc/applications.md](doc/applications.md) | the frameworks' repositories, what an application is, and the applications the lab plans to run |
 
 ## Quick start
 

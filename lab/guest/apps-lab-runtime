@@ -33,16 +33,76 @@ bridge_of() {
     docker network inspect "$1" -f '{{index .Options "com.docker.network.bridge.name"}}' 2>/dev/null
 }
 
-# The WAN gateway reaches the internet through Boardfarm's management network (eth0) and
-# masquerades there. Connected to its WAN network while it runs, as bf-lab setup does, it
-# takes Docker's gateway on that network as its default route instead and forwards nowhere.
+# Every provider container is on two Docker networks: Boardfarm's management network of
+# its kind, which has to be its eth0, and its slot's WAN or LAN network, its eth1. bf-lab
+# gets that order by starting the container on the management network alone and
+# connecting the slot's network afterwards. A container Docker starts with both networks
+# (a restart, a VM boot) can come up with the two swapped, and its init then configures
+# the wrong one. So the lab connects the slot's network again with its interface name
+# fixed (Docker 28 and later), which holds across restarts.
+ifname_option=com.docker.network.endpoint.ifname
+
+management() {    # the management network of a kind (dhcp, wan, lan): "name gateway prefix"
+    jq -r --arg kind "$1" '.docker_networks[$kind + "_management"]
+        | "\(.name) \(.gateway) \(.subnet | sub("\\.[0-9]+/[0-9]+$"; ""))"' "$lab_repo/lab/base.json"
+}
+
+eth0_is_management() {    # container kind
+    local network gateway prefix
+    read -r network gateway prefix < <(management "$2")
+    docker exec "$1" ip -4 -o address show eth0 2>/dev/null | grep -q " $prefix\."
+}
+
+pinned() {    # container network: the network's interface in the container is fixed to eth1
+    docker inspect "$1" \
+        -f "{{index (index .NetworkSettings.Networks \"$2\").DriverOpts \"$ifname_option\"}}" \
+        2>/dev/null | grep -qx eth1
+}
+
+# Connect a container's slot network again as eth1 (with the address bf-lab gives a server
+# there) and start the container again. On a Docker that cannot fix the name: the way
+# bf-lab deploys it, on the management network alone, then the slot's network.
+reattach() {    # container network [docker network connect options]
+    local container=$1 network=$2
+    shift 2
+    docker network disconnect "$network" "$container" >/dev/null 2>&1 || true
+    if docker network connect --driver-opt "$ifname_option=eth1" "$@" "$network" "$container" 2>/dev/null; then
+        docker restart -t 2 "$container" >/dev/null
+    else
+        docker restart -t 2 "$container" >/dev/null
+        docker network connect "$@" "$network" "$container"
+    fi
+}
+
+slot_connect_options() {    # kind cpe: what bf-lab passes when it connects the slot's network
+    local index=$((100 + $2))
+    case "$1" in
+        dhcp) printf '%s\n' --ip "10.$index.0.10" --ip6 "2001:dead:beef:$index::10" ;;
+        wan) printf '%s\n' --ip "10.$index.0.20" --ip6 "2001:dead:beef:$index::20" ;;
+    esac
+}
+
+slot_network() {    # kind cpe
+    case "$1" in dhcp|wan) echo "wan-cpe$2" ;; lan) echo "lan-cpe$2" ;; esac
+}
+
+reattach_provider() {    # kind cpe
+    local options
+    mapfile -t options < <(slot_connect_options "$1" "$2")
+    reattach "$1-cpe$2" "$(slot_network "$1" "$2")" "${options[@]}"
+}
+
+# The WAN gateway reaches the internet through the management network and masquerades
+# there. Connected to its WAN network while it runs, it has Docker's gateway on that
+# network as its default route instead, and forwards nowhere.
 wan_routes_out() {
     docker exec "wan-cpe$1" ip -4 route show default 2>/dev/null | grep -q ' dev eth0'
 }
 
-# A slot is ready when its three containers run on the slot's two bridges, the Kea server
-# and the gateway have their WAN addresses, the gateway routes out, and Kea serves both
-# families. slot_problem names the first of these that does not hold.
+# A slot is ready when its three containers run on the slot's two bridges with their
+# interfaces in order, the Kea server and the gateway have their WAN addresses, the gateway
+# routes out, and Kea serves both families. slot_problem names the first of these that
+# does not hold.
 slot_problem() {
     local i=$1 index=$((100 + $1)) container
     for container in "dhcp-cpe$i" "wan-cpe$i" "lan-cpe$i"; do
@@ -52,6 +112,10 @@ slot_problem() {
         { echo "no bridge br-wan$index for the network wan-cpe$i"; return; }
     [ "$(bridge_of "lan-cpe$i")" = "br-lan$((200 + i))" ] && ip link show "br-lan$((200 + i))" >/dev/null 2>&1 ||
         { echo "no bridge br-lan$((200 + i)) for the network lan-cpe$i"; return; }
+    for container in dhcp wan lan; do
+        eth0_is_management "$container-cpe$i" "$container" ||
+            { echo "$container-cpe$i: eth0 is not its management interface"; return; }
+    done
     docker exec "dhcp-cpe$i" ip -4 address show eth1 2>/dev/null | grep -q "10\.$index\.0\.10/24" ||
         { echo "dhcp-cpe$i is not at 10.$index.0.10"; return; }
     docker exec "wan-cpe$i" ip -4 address show eth1 2>/dev/null | grep -q "10\.$index\.0\.20/24" ||
@@ -73,13 +137,12 @@ boardfarm_ready() {
     [ -z "$(boardfarm_problems)" ]
 }
 
-wait_boardfarm_ready() {
-    local attempt
-    for attempt in $(seq 1 "${1:-30}"); do
-        boardfarm_ready && return 0
-        sleep 1
+wait_boardfarm_ready() {    # [seconds]
+    local deadline=$((SECONDS + ${1:-30}))
+    while ! boardfarm_ready; do
+        [ "$SECONDS" -lt "$deadline" ] || return 1
+        sleep 2
     done
-    return 1
 }
 
 stop_routers() {
@@ -91,21 +154,49 @@ stop_routers() {
     done < <(routers)
 }
 
-# What a restart of one container repairs: Kea's stale PID files, and the gateway's route.
+# What can be repaired without setting Boardfarm up again: interfaces in the wrong order,
+# Kea's stale PID files, the gateway's default route.
 repair_providers() {
-    local i
+    local i kind network gateway prefix
     for i in $(cpes); do
-        if docker container inspect "dhcp-cpe$i" >/dev/null 2>&1 \
-            && ! docker exec "dhcp-cpe$i" pidof kea-dhcp4 >/dev/null 2>&1; then
+        if running "dhcp-cpe$i" && { ! docker exec "dhcp-cpe$i" pidof kea-dhcp4 >/dev/null 2>&1 ||
+                ! docker exec "dhcp-cpe$i" pidof kea-dhcp6 >/dev/null 2>&1; }; then
             # Kea leaves its PID files in the container's writable layer; after a power-off
-            # they name processes that no longer exist and Kea does not start.
+            # they name processes that no longer exist and Kea (either family) does not start.
             docker exec "dhcp-cpe$i" sh -c 'rm -f /var/run/kea/*.pid /run/kea/*.pid' || true
-            docker restart "dhcp-cpe$i" >/dev/null || true
+            reattach_provider dhcp "$i" || true
         fi
-        if running "wan-cpe$i" && ! wan_routes_out "$i"; then
-            docker restart "wan-cpe$i" >/dev/null || true
+        for kind in dhcp wan lan; do
+            if running "$kind-cpe$i" && ! eth0_is_management "$kind-cpe$i" "$kind"; then
+                reattach_provider "$kind" "$i" || true
+            fi
+        done
+        if running "wan-cpe$i" && eth0_is_management "wan-cpe$i" wan && ! wan_routes_out "$i"; then
+            read -r network gateway prefix < <(management wan)
+            docker exec "wan-cpe$i" ip route replace default via "$gateway" dev eth0 || true
         fi
     done
+}
+
+# Fix the interface names of every provider that does not have them fixed yet.
+pin_providers() {
+    local i kind
+    for i in $(cpes); do
+        for kind in dhcp wan lan; do
+            pinned "$kind-cpe$i" "$(slot_network "$kind" "$i")" || reattach_provider "$kind" "$i" || true
+        done
+    done
+}
+
+settle_boardfarm() {    # wait for readiness, repairing what can be repaired
+    local attempt
+    for attempt in 1 2 3; do
+        wait_boardfarm_ready 45 && return 0
+        echo "Boardfarm is not ready (round $attempt/3):"
+        boardfarm_problems | sed 's/^/  /'
+        repair_providers
+    done
+    wait_boardfarm_ready 45
 }
 
 boardfarm_up() {
@@ -117,15 +208,7 @@ boardfarm_up() {
     for i in $(cpes); do
         docker start "dhcp-cpe$i" "wan-cpe$i" "lan-cpe$i" >/dev/null 2>&1 || true
     done
-    # After a boot the containers take their time (the gateway alone waits for its WAN
-    # interface, then configures it); repair what a restart repairs before giving up.
-    for attempt in 1 2 3; do
-        wait_boardfarm_ready 60 && break
-        echo "Boardfarm is not ready (round $attempt/3):"
-        boardfarm_problems | sed 's/^/  /'
-        repair_providers
-    done
-    if ! wait_boardfarm_ready 30; then
+    if ! settle_boardfarm; then
         echo 'Boardfarm did not come back; setting it up again:'
         boardfarm_problems | sed 's/^/  /'
         # Setting the lab up removes and recreates the bridges the routers are on.
@@ -141,13 +224,13 @@ boardfarm_up() {
             [ "$attempt" -lt 3 ] || { echo 'Boardfarm setup failed' >&2; return 1; }
             sleep $((attempt * 10))
         done
-        # bf-lab connected each gateway to its WAN network while it ran: started again with
-        # both networks, it routes out through the management network.
-        for i in $(cpes); do
-            docker restart "wan-cpe$i" >/dev/null
-        done
-        wait_boardfarm_ready 90 || { echo 'Boardfarm is set up but not ready' >&2; return 1; }
     fi
+    pin_providers
+    settle_boardfarm || {
+        echo 'Boardfarm is set up but not ready:' >&2
+        boardfarm_problems | sed 's/^/  /' >&2
+        return 1
+    }
     for i in $(cpes); do
         docker update --restart unless-stopped "dhcp-cpe$i" "wan-cpe$i" "lan-cpe$i" >/dev/null
     done
@@ -159,8 +242,15 @@ boardfarm_up() {
     printf '%s\n' 'boardfarm-ready' > "$state/boardfarm.status"
 }
 
-lan_lease() {    # the LAN client's address from the router, if it has one
-    docker exec "lan-cpe$1" ip -4 -o address show eth1 2>/dev/null | awk '{print $4; exit}'
+# The LAN client's address from the router, if it has one. Not the address Docker gives
+# the interface when it connects the network: the client's init removes that one first.
+lan_lease() {
+    local docker_address
+    eth0_is_management "lan-cpe$1" lan || return 0
+    docker_address=$(docker inspect "lan-cpe$1" \
+        -f "{{(index .NetworkSettings.Networks \"lan-cpe$1\").IPAddress}}" 2>/dev/null)
+    docker exec "lan-cpe$1" ip -4 -o address show eth1 2>/dev/null |
+        awk -v docker="$docker_address" '{split($4, a, "/"); if (a[1] != docker) {print $4; exit}}'
 }
 
 # The LAN client asks for its address once, when its container starts. Started before the
@@ -169,7 +259,11 @@ lan_clients_up() {
     local name framework cpe attempt
     while read -r name framework cpe; do
         [ -z "$(lan_lease "$cpe")" ] || continue
-        docker restart "lan-cpe$cpe" >/dev/null
+        if pinned "lan-cpe$cpe" "lan-cpe$cpe"; then
+            docker restart -t 2 "lan-cpe$cpe" >/dev/null
+        else
+            reattach_provider lan "$cpe"
+        fi
     done < <(routers)
     while read -r name framework cpe; do
         for attempt in $(seq 1 90); do

@@ -60,7 +60,11 @@ check_router() {
     if [ -n "$address" ]; then pass "LAN bridge brlan0 at $address"; else fail 'LAN bridge brlan0 has an address'; fi
     check 'the LAN port eth2 is in brlan0' in_router test -e /sys/class/net/brlan0/brif/eth2
 
-    lease=$(docker exec "lan-cpe$cpe" ip -4 -o address show eth1 2>/dev/null | awk '{print $4; exit}')
+    # not the address Docker itself gives the interface: the client's init removes that one
+    lease=$(docker exec "lan-cpe$cpe" ip -4 -o address show eth1 2>/dev/null |
+        awk -v docker="$(docker inspect "lan-cpe$cpe" \
+            -f "{{(index .NetworkSettings.Networks \"lan-cpe$cpe\").IPAddress}}" 2>/dev/null)" \
+            '{split($4, a, "/"); if (a[1] != docker) {print $4; exit}}')
     if [ -n "$lease" ]; then pass "lan-cpe$cpe has $lease from the router"; else fail "lan-cpe$cpe has an address from the router"; fi
     check "lan-cpe$cpe reaches the router (${address%/*})" \
         docker exec "lan-cpe$cpe" ping -I eth1 -c 2 -W 3 "${address%/*}"

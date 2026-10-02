@@ -186,7 +186,9 @@ builds every lab application and puts the bundles where the routers fetch them:
 The bundles are served to the routers over HTTP from the VM, on the WAN side
 (each router reaches the VM at its WAN bridge's address). The first applications
 are the reference's own: `hello` (a heartbeat on stdout) and the tic-tac-toe web
-page (lighttpd), each on both frameworks.
+page (lighttpd), each on both frameworks. RDK's own application SDK
+(`meta-dac-sdk-broadband`) has three more, `shell`, `iperf3` and `speedtest`;
+they and the frameworks' repositories are in [applications.md](applications.md).
 
 ## Tests
 
@@ -210,9 +212,9 @@ Acceptance of the lab is that suite passing on both routers.
 
 ## Found on the way
 
-What the first builds showed, and what the lab does about it. The first three are
-defects of the image or of Boardfarm that the lab works around in its own
-scripts; they are candidates for a fix where they belong.
+What the first builds showed, and what the lab does about it. The first five are
+defects of the image or of Boardfarm's containers that the lab works around in
+its own scripts; they are candidates for a fix where they belong.
 
 - **The image removes `eth1`.** Some ten seconds into its boot the router deletes
   an interface named `eth1` (the LAN port the layer's own HAL bridges into
@@ -225,11 +227,25 @@ scripts; they are candidates for a fix where they belong.
   without a remote controller. With it, `obuspa -c get Device.SoftwareModules.`
   answers.
 - **Boardfarm's WAN gateway routes nowhere after `bf-lab setup`.** Connected to
-  its WAN network while it runs, the container takes Docker's gateway on that
+  its WAN network while it runs, the container has Docker's gateway on that
   network as its default route instead of the management network it masquerades
-  on. Started again it is right, so the runtime restarts the gateways after a
-  setup and checks their route as part of readiness. (The EasyMesh lab never
-  sees this: its VM build reboots before anything needs the internet.)
+  on. The runtime checks the route as part of readiness and puts it right. (The
+  EasyMesh lab does not meet this: its VM build reboots before anything needs
+  the internet.)
+- **A restarted Boardfarm container can come up with its interfaces swapped.**
+  bf-lab starts each container on its management network and connects the slot's
+  WAN or LAN network afterwards, so that the first is `eth0` and the second
+  `eth1`. Started by Docker with both (a restart, a VM boot), a container can get
+  them the other way round, and its init then flushes and configures the wrong
+  one: seen on a LAN client, a Kea server and a WAN gateway, and the reason a VM
+  boot ended in a full `bf-lab setup`. After a setup the runtime connects every
+  slot network again with its interface name fixed to `eth1`
+  (`com.docker.network.endpoint.ifname`, Docker 28 and later), which holds across
+  restarts, and it checks that `eth0` is the management interface as part of
+  readiness.
+- **Kea does not start after a power-off**, either family: its PID files stay in
+  the container. The runtime removes them and starts the container again (the
+  EasyMesh lab does the same for DHCPv4).
 - **`bf-lab status` as a gate.** It fails until the LAN clients' sshd runs, which
   is only after they have waited for a lease. The runtime has its own readiness
   test and the acceptance check runs `bf-lab status` at the end.

@@ -23,9 +23,11 @@ Commands:
                        the VM; start also brings the lab up in order
   status               the VM, Boardfarm's containers and the routers
   check                the acceptance check, per router: WAN, DHCP, internet, LAN, framework
+  update               the lab's scripts, settings and current images into the running VM;
+                       the routers stay as they are
   deploy [--fresh] [ROUTER...]
-                       the lab's scripts and the current images into the running VM, then the
-                       named routers (default: all) deployed again; --fresh: with an empty /nvram
+                       update, then the named routers (default: all) deployed again from their
+                       images; --fresh: with an empty /nvram
   router NAME [CMD...] a shell, or a command, in a router
   delete               delete the VM (its storage pool stays)
 
@@ -208,7 +210,8 @@ check_vm() {
     run_root /usr/local/sbin/apps-lab-check "$@"
 }
 
-deploy_routers() {
+# The lab's scripts, its settings and the current images into the running VM.
+update_vm() {
     instance_exists
     [ "$(instance_state)" = RUNNING ] || { echo "$name is not running: $0 start" >&2; exit 1; }
     wait_agent
@@ -218,12 +221,16 @@ deploy_routers() {
     prepare_assets "$stage"
     push_inputs "$stage"
     step 20-lab-host.sh
-    step 30-boardfarm.sh
     step 50-runtime.sh
+    lxc config set "$name" user.apps-lab.commit "$(cat "$stage/assets/lab-commit")"
+}
+
+deploy_routers() {
+    update_vm
+    step 30-boardfarm.sh
     step 40-routers.sh "$@"
     [ "${1:-}" != --fresh ] || shift
     run_root /usr/local/sbin/apps-lab-check "$@"
-    lxc config set "$name" user.apps-lab.commit "$(cat "$stage/assets/lab-commit")"
 }
 
 router_shell() {
@@ -250,6 +257,7 @@ case "${1:-}" in
     restart) stop_vm; start_vm ;;
     status) status_vm ;;
     check) check_vm "${@:2}" ;;
+    update) update_vm ;;
     deploy) deploy_routers "${@:2}" ;;
     router) router_shell "${@:2}" ;;
     delete) delete_vm ;;
