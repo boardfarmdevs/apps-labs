@@ -70,3 +70,65 @@ code { font: 14px/1.5 ui-monospace, "SFMono-Regular", Menlo, monospace; }
 @media (max-width: 640px) {
   td:first-child, .state { white-space: normal; }
 }
+
+/* The life of an application: an animated figure with a step list. Without script every
+   step is listed and the figure rests on "start"; with script one step shows at a time. */
+.life { margin: 24px 0 0; }
+.life .scroll { overflow-x: auto; }
+.life svg { display: block; width: 100%; min-width: 700px; height: auto; }
+.life .slot { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.life .tile rect { fill: var(--app); stroke: none; }
+.life .tile text { fill: #fff; font-size: 12px; font-weight: 600; }
+.life .unit { fill: var(--accent-soft); stroke: var(--app); stroke-width: 1.5; }
+.life .beat { fill: var(--app); transform-box: fill-box; transform-origin: center; }
+.life .cell { fill: none; stroke: var(--muted); stroke-width: 1.2; }
+.life .mark { stroke: var(--app); stroke-width: 2; fill: none; stroke-linecap: round; }
+.life .flow { stroke: var(--accent); stroke-width: 2; fill: none; stroke-dasharray: 6 6; }
+.life text.op { font-size: 11px; fill: var(--accent); font-weight: 600; }
+.life text.on { fill: var(--ok); font-weight: 600; }
+.life [data-on] { opacity: 0; transition: opacity .45s ease; }
+.life[data-step="1"] [data-on~="1"], .life[data-step="2"] [data-on~="2"],
+.life[data-step="3"] [data-on~="3"], .life[data-step="4"] [data-on~="4"],
+.life[data-step="5"] [data-on~="5"], .life[data-step="6"] [data-on~="6"],
+.life[data-step="7"] [data-on~="7"] { opacity: 1; }
+.life .tile { transition: transform .9s ease, opacity .45s ease; }
+.life #tile-src { transform: translate(245px, 294px); }
+.life[data-step="1"] #tile-src { transform: translate(40px, 105px); }
+.life #tile-du { transform: translate(440px, 196px); opacity: 1; }
+.life[data-step="1"] #tile-du, .life[data-step="2"] #tile-du { transform: translate(245px, 294px); opacity: 0; }
+.life[data-step="7"] #tile-du { opacity: 0; }
+.life .unit-box { transition: opacity .45s ease; opacity: 0; }
+.life[data-step="3"] .unit-box, .life[data-step="6"] .unit-box { opacity: .45; }
+.life[data-step="4"] .unit-box, .life[data-step="5"] .unit-box { opacity: 1; }
+.life .flow { animation: life-flow .9s linear infinite; }
+.life[data-step="4"] .beat, .life[data-step="5"] .beat { animation: life-beat 1.2s ease-in-out infinite; }
+@keyframes life-flow { to { stroke-dashoffset: -12; } }
+@keyframes life-beat { 0%, 100% { transform: scale(.7); opacity: .5; } 50% { transform: scale(1.25); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .life .flow, .life .beat { animation: none !important; }
+  .life .tile, .life [data-on], .life .unit-box { transition: none; }
+}
+.life-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0 0; }
+.life-controls button {
+  font: inherit; font-size: 14px; color: var(--fg); background: var(--card);
+  border: 1px solid var(--line); border-radius: 999px; padding: 6px 13px; cursor: pointer;
+}
+.life-controls button:hover { border-color: var(--accent); }
+.life-controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.life-controls button[aria-current="step"] { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
+.life-controls .play { margin-left: auto; }
+.life-steps { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 16px; }
+.life-steps > li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; }
+.life-steps h3 { margin: 0 0 4px; }
+.life-steps h3 .n { color: var(--accent); margin-right: 4px; }
+.life-steps h3 .n::after { content: "."; }
+.life-steps p { margin: 4px 0 10px; color: var(--muted); max-width: 80ch; }
+.life-steps .cmds { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 12px; }
+.life-steps .cmds > div { min-width: 0; }
+.life-steps .cmds p { margin: 0 0 4px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.life-steps pre { margin: 0; padding: 10px 12px; }
+.life-steps code { font-size: 13px; }
+.life.scripted .life-steps > li { display: none; }
+.life.scripted .life-steps > li.current { display: block; }
+.out { color: var(--muted); }
+.apps-out { margin-top: 16px; }
