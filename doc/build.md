@@ -98,7 +98,9 @@ bundle and the lab's scripts into it, and runs the numbered steps of
 | `50-runtime.sh` | the service that brings the lab back on boot, and the bundle server |
 
 Then it reboots the VM, lets the runtime service reconstruct the lab, and runs
-the acceptance check. A lab with one router, while the other image is not built
+the acceptance check. A build takes some 22 minutes, most of it Boardfarm
+building its container images. `APPS_LAB_NAME=other lab/build.sh build` makes a
+second, independent lab next to the first. A lab with one router, while the other image is not built
 yet:
 
 ```sh

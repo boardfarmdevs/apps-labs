@@ -215,6 +215,15 @@ pin_providers() {
     done
 }
 
+providers_exist() {    # every provider container is there, running or not
+    local i kind
+    for i in $(cpes); do
+        for kind in dhcp wan lan; do
+            docker container inspect "$kind-cpe$i" >/dev/null 2>&1 || return 1
+        done
+    done
+}
+
 settle_boardfarm() {    # wait for readiness, repairing what can be repaired
     local attempt
     for attempt in 1 2 3; do
@@ -235,8 +244,11 @@ boardfarm_up() {
     for i in $(cpes); do
         docker start "dhcp-cpe$i" "wan-cpe$i" "lan-cpe$i" >/dev/null 2>&1 || true
     done
-    if ! settle_boardfarm; then
-        echo 'Boardfarm did not come back; setting it up again:'
+    if ! providers_exist; then
+        echo 'Boardfarm is not set up yet'
+    fi
+    if ! providers_exist || ! settle_boardfarm; then
+        echo 'Setting Boardfarm up:'
         boardfarm_problems | sed 's/^/  /'
         # Setting the lab up removes and recreates the bridges the routers are on.
         stop_routers
