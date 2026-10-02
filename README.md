@@ -1,6 +1,6 @@
 # Apps labs
 
-**Site:** <https://boardfarmdevs.github.io/apps-labs/>
+**Site:** <https://apps.vcpe.dev/>
 
 Virtual labs that demonstrate the application frameworks of RDK-B: **DAC**
 (Downloadable Application Containers, the RDK default) and **LCM** (prpl
