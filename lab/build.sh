@@ -176,6 +176,7 @@ build_vm() {
     run_root cloud-init status --wait >/dev/null 2>&1 || true
     push_inputs "$stage"
 
+    step 05-no-automatic-updates.sh
     step 00-base.sh
     step 20-lab-host.sh
     step 30-boardfarm.sh
@@ -226,6 +227,7 @@ update_vm() {
     trap 'rm -rf -- "$stage"' EXIT
     prepare_assets "$stage"
     push_inputs "$stage"
+    step 05-no-automatic-updates.sh
     step 20-lab-host.sh
     step 50-runtime.sh
     lxc config set "$name" user.apps-lab.commit "$(cat "$stage/assets/lab-commit")"

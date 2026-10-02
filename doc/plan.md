@@ -139,6 +139,7 @@ Pins (`manifest/apps-lab.xml`):
 
 | Step | What it does |
 | --- | --- |
+| `05-no-automatic-updates.sh` | before any package work: the apt timers, unattended-upgrades and snap refreshes off |
 | `00-base.sh` | packages, Docker, nested LXD (held at the installed revision) |
 | `20-lab-host.sh` | the pinned Boardfarm checkout and its tools, the lab's two-CPE configuration, the nested LXD pool |
 | `30-boardfarm.sh` | Boardfarm's providers: `bf-lab setup`, then what the runtime does to make them stay right |
@@ -262,6 +263,12 @@ its own scripts; they are candidates for a fix where they belong.
 - **`bf-lab status` as a gate.** It fails until the LAN clients' sshd runs, which
   is only after they have waited for a lease. The runtime has its own readiness
   test and the acceptance check runs `bf-lab status` at the end.
+- **A lab VM updates itself.** Ubuntu's defaults (the apt timers,
+  unattended-upgrades, snap auto-refresh) restart services under a running lab:
+  on 2 October an OpenSSL upgrade did that in an EasyMesh lab VM. The apps lab's
+  first step now switches them off, `lab/build.sh update` does it in a lab that
+  exists, and the check has it. Tried on a fresh Ubuntu 24.04 VM; the VM
+  `apps-lab` was stopped at the time and gets it with its next `update`.
 - **`meta-amx` in the DAC build.** The BSP's setup adds it to `bblayers.conf`
   whenever the workspace has it; `build-images.sh` takes it out again for DAC.
 

@@ -91,6 +91,7 @@ bundle and the lab's scripts into it, and runs the numbered steps of
 
 | Step | |
 | --- | --- |
+| `05-no-automatic-updates.sh` | first, before any `apt-get`: the apt timers and unattended-upgrades off, snaps held. Nothing in the VM updates itself under a running lab; a lab is updated by building it again |
 | `00-base.sh` | packages, Docker, nested LXD (held at its revision) |
 | `20-lab-host.sh` | the Boardfarm checkout and its tools, the lab's configuration, the routers' LXD pool |
 | `30-boardfarm.sh` | `bf-lab setup` for two CPE slots: Kea, WAN gateway and LAN client each |
@@ -159,6 +160,8 @@ two things in its root filesystem (see "Found on the way" in the
 - the router reaches the bundle server.
 
 Then Boardfarm's own `bf-lab status`: every provider answers on Docker and on SSH.
+And the VM itself: the apt timers are masked, unattended-upgrades does not run,
+snaps are held.
 
 ## Addresses
 

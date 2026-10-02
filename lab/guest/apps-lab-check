@@ -98,6 +98,19 @@ if [ "$#" -eq 0 ]; then
     echo 'Boardfarm'
     check 'bf-lab status: every connectivity check passes' \
         env BF_LAB_CONFIG=apps-lab.json BF_INVENTORY=apps-lab.json /opt/boardfarm/.venv/bin/bf-lab status
+
+    # Nothing in the VM updates itself under the running lab (scripts/05-no-automatic-updates.sh).
+    echo 'Lab VM'
+    masked() { [ "$(systemctl is-enabled "$1" 2>/dev/null)" = masked ]; }
+    check 'the apt timers are masked' \
+        eval 'masked apt-daily.timer && masked apt-daily-upgrade.timer'
+    check 'unattended-upgrades does not run' \
+        sh -c '! systemctl is-active --quiet unattended-upgrades.service'
+    check 'apt does no periodic work' \
+        sh -c 'apt-config dump | grep -qx "APT::Periodic::Unattended-Upgrade \"0\";"'
+    # "forever": a new VM holds refreshes by itself for its first two hours
+    check 'snaps are held' \
+        sh -c 'snap refresh --time | grep -qx "hold: forever"'
 fi
 
 if [ "$failures" -eq 0 ]; then
