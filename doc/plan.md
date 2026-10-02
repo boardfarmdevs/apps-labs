@@ -123,9 +123,12 @@ Pins (`manifest/apps-lab.xml`):
 
 - the upstream projects exactly as `doc/easymesh/build/manifest.xml` pins them at
   the layer commit below;
-- `boardfarmdevs/meta-cmf-bananapi-vcpe` at `36e36052`, the commit the EasyMesh
+- `boardfarmdevs/meta-cmf-bananapi-vcpe` at `670ce1dc`, the commit the EasyMesh
   lab's last image was built from, with its `gen/medium` submodule (the image
-  takes a page from it);
+  takes a page from it). The EasyMesh labs' repositories had their history
+  rewritten on 2 October 2026; this is the commit that was `36e36052` before,
+  with the same files (only its two submodule pins moved with their
+  repositories), so the images built at the old pin are the images of this one;
 - `meta-amx` at `a089ac0d` (tag `prplware-v4.1.0-p1`) and `meta-lcm` at `bba4f3ed`
   (tag `prplware-v4.1.0`), the tags `meta-rdk-broadband-apps` names in
   `manifests/rdkbb-apps-lcm.xml`.

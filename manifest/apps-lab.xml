@@ -31,7 +31,7 @@
   <project name="rdkcentral/meta-rdk-iot" path="meta-rdk-iot" remote="github" revision="23e4246291edb11eec6be892982ebed7a0e53646" upstream="develop"/>
   <project name="rdkcentral/meta-rdk-wan" path="meta-rdk-wan" remote="github" revision="05cd6c1dce8d9e6bd84acf1631007f1f6062d717" upstream="main"/>
   <!-- the layer that retargets the Banana Pi build to an x86 container -->
-  <project name="boardfarmdevs/meta-cmf-bananapi-vcpe" path="meta-cmf-bananapi-vcpe" remote="github" revision="36e36052ec8afe19ab6466c225001f49253cce51" upstream="main"/>
+  <project name="boardfarmdevs/meta-cmf-bananapi-vcpe" path="meta-cmf-bananapi-vcpe" remote="github" revision="670ce1dc8be49854548776cb53c51a611ee97d34" upstream="main"/>
   <!-- prpl LCM: Ambiorix and the lifecycle manager (the LCM image only) -->
   <project name="meta-amx" path="meta-amx" remote="prpl" revision="a089ac0d8abaf304b9aefddbab0d94f61ba5de6d" upstream="refs/tags/prplware-v4.1.0-p1"/>
   <project name="meta-lcm" path="meta-lcm" remote="prpl" revision="bba4f3edae60054ab37c886c36c3f8a0f09b3076" upstream="refs/tags/prplware-v4.1.0"/>
