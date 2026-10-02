@@ -8,6 +8,8 @@
 # lcm  the prpl lifecycle manager (meta-amx, meta-lcm; build/lcm.conf)
 #
 # BITBAKE_OPTIONS=-k keeps a build going past a failed recipe, to see every failure at once.
+# BUILD_PRIORITY=auto|low|normal: low runs the build at the lowest CPU and I/O priority;
+# auto, the default, does that when a VM runs on this host.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -32,6 +34,20 @@ test -f "$workspace/meta-cmf-bananapi/setup-environment-refboard-rdkb" || {
 }
 mkdir -p "$evidence" "$downloads" "$sstate"
 "$root/build/verify-pins.py" "$manifest" "$workspace"
+
+# A build beside a running lab VM takes that lab's CPU: on 1 October 2026 this lab's builds
+# cost an EasyMesh lab on the same host a third of its CPU time for hours, its extenders
+# lost their backhaul and its controller was killed. So beside a running VM the build,
+# with everything it starts, runs at the lowest CPU and I/O priority.
+priority=${BUILD_PRIORITY:-auto}
+case "$priority" in auto|low|normal) ;; *) echo 'BUILD_PRIORITY must be auto, low or normal' >&2; exit 2 ;; esac
+neighbours=$(lxc list --format csv -c nts 2>/dev/null |
+    awk -F, '$2 == "VIRTUAL-MACHINE" && $3 == "RUNNING" {print $1}' | paste -sd' ' - || true)
+if [ "$priority" = low ] || { [ "$priority" = auto ] && [ -n "$neighbours" ]; }; then
+    echo "Building at the lowest priority${neighbours:+ (running on this host: $neighbours)}"
+    renice -n 19 -p $$ >/dev/null
+    ionice -c 3 -p $$
+fi
 
 cat > "$workspace/clean-build.conf" <<EOF
 BB_NUMBER_THREADS:forcevariable = "$threads"

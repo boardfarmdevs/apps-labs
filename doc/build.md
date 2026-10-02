@@ -61,6 +61,12 @@ clang and rust among the rest. It leaves its own sstate behind; a later change
 of one recipe rebuilds in about ten minutes. `BITBAKE_OPTIONS=-k` keeps a build
 going past a failed recipe.
 
+A build takes every CPU of the host. When a VM runs on the host (`lxc list`),
+the build therefore runs at the lowest CPU and I/O priority, and says so:
+a lab VM beside a build at normal priority loses its CPU time, and a lab that
+loses its CPU time falls apart. `BUILD_PRIORITY=low` does it always,
+`BUILD_PRIORITY=normal` never. Better still: build when no lab runs.
+
 Each build leaves a record in `yocto/build-evidence/<framework>-<time>/`
 (`latest-<framework>` names the last): the manifest, the configuration, the
 environment, the log, the exit code, the image's path and checksum, its package
@@ -101,7 +107,13 @@ bundle and the lab's scripts into it, and runs the numbered steps of
 Then it reboots the VM, lets the runtime service reconstruct the lab, and runs
 the acceptance check. A build takes some 22 minutes, most of it Boardfarm
 building its container images. `APPS_LAB_NAME=other lab/build.sh build` makes a
-second, independent lab next to the first. A lab with one router, while the other image is not built
+second, independent lab next to the first.
+
+`build` and `start` refuse when another VM runs on the host: two lab VMs take
+CPU from each other. Stop the other one first, or set `APPS_LAB_SHARED_HOST=1`
+to share the host knowingly.
+
+A lab with one router, while the other image is not built
 yet:
 
 ```sh

@@ -45,6 +45,8 @@ Overrides (defaults in lab/lab.env):
   APPS_LAB_NAME=$name  APPS_LAB_CPUS=$APPS_LAB_CPUS  APPS_LAB_MEMORY=$APPS_LAB_MEMORY  APPS_LAB_DISK=$APPS_LAB_DISK
   APPS_LAB_NETWORK=$APPS_LAB_NETWORK  APPS_LAB_STORAGE=$storage (created as a dir pool if absent)
   APPS_LAB_ROUTERS="name:framework:cpe ..." (a subset builds a lab with fewer routers)
+  APPS_LAB_SHARED_HOST=${APPS_LAB_SHARED_HOST:-0} (1: build or start the VM although another VM runs on this
+    host; two lab VMs take CPU from each other)
 EOF
 }
 
@@ -55,6 +57,26 @@ require_command() {
 instance_exists() { lxc info "$name" >/dev/null 2>&1; }
 instance_state() { lxc info "$name" 2>/dev/null | sed -n 's/^Status: //p'; }
 run_root() { lxc exec "$name" -- "$@"; }
+
+# Lab VMs share a host badly. On 1 October 2026 this lab's VM and its image builds, beside
+# an EasyMesh lab VM on the same host, cost that lab a third of its CPU time: its extenders
+# lost their backhaul and its controller was killed. So this VM is built or started only
+# when no other VM runs on the host, unless told that the host is shared knowingly.
+other_running_vms() {
+    lxc list --format csv -c nts | awk -F, -v own="$name" \
+        '$2 == "VIRTUAL-MACHINE" && $3 == "RUNNING" && $1 != own {print $1}' | paste -sd' ' -
+}
+
+require_host_to_itself() {
+    local others
+    [ "${APPS_LAB_SHARED_HOST:-0}" != 1 ] || return 0
+    others=$(other_running_vms)
+    [ -z "$others" ] || {
+        echo "another VM runs on this host ($others): stop it first, or set APPS_LAB_SHARED_HOST=1" >&2
+        echo '(two lab VMs on one host take CPU from each other)' >&2
+        exit 1
+    }
+}
 
 wait_agent() {
     local attempt
@@ -159,6 +181,7 @@ build_vm() {
     require_command lxc
     require_command sha256sum
     ! instance_exists || { echo "$name already exists; delete it explicitly before a build" >&2; exit 1; }
+    require_host_to_itself
     install -d "$root/out"
     stage=$(mktemp -d "$root/out/stage.XXXXXX")
     trap 'rm -rf -- "$stage"' EXIT
@@ -194,7 +217,10 @@ build_vm() {
 
 start_vm() {
     instance_exists
-    [ "$(instance_state)" = RUNNING ] || lxc start "$name"
+    if [ "$(instance_state)" != RUNNING ]; then
+        require_host_to_itself
+        lxc start "$name"
+    fi
     wait_agent
     run_root systemctl start apps-lab.service
 }

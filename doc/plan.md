@@ -287,8 +287,15 @@ its own scripts; they are candidates for a fix where they belong.
 - **`/apps` storage.** The toolkit wants a dedicated writable partition for
   application images and data; in the lab that is a directory on the router's
   root disk, sized in `lab/lab.env`.
-- **The shared host.** rev140 also runs an EasyMesh lab VM; an image build loads
-  the host and can disturb that lab's traffic checks while it runs.
+- **The shared host.** rev140 also runs the EasyMesh labs' VMs, and this lab's
+  first day cost one of them dearly: from the minute `apps-lab` was created
+  (1 October, 22:50 UTC) until the LCM build ended, the RDK EasyMesh lab VM lost
+  up to 29 % of its CPU time to the host; its extenders dropped their backhaul
+  and its controller was killed for memory. Since then an image build beside a
+  running VM runs at the lowest CPU and I/O priority (`BUILD_PRIORITY`), and
+  `lab/build.sh` builds or starts the VM only when no other VM runs on the host
+  (`APPS_LAB_SHARED_HOST=1` to share it knowingly). One lab VM at a time on a
+  host is the rule the EasyMesh labs keep too.
 
 ## Status
 
