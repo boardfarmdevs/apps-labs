@@ -113,9 +113,11 @@ DISTRO_FEATURES_append = " lcm-bundles crun-backend "
 ```
 
 The `DISTRO_FEATURES` change invalidates most of the sstate, so LCM has its own
-build directory and its first build is a long one. The layer already carries
-what LCM needs in a container (cthulhu on cgroup v2 and without loop mounts, the
-syslog-ng include, the usp-pa event loop fix, the `mod-amxb-rbus` stub).
+build directory and its first build is a long one. The layer carries what LCM
+needed in a container when its notes were written (cthulhu on cgroup v2 and
+without loop mounts, the syslog-ng include, the usp-pa event loop fix, the
+`mod-amxb-rbus` stub); with the newer LCM the toolkit now names, not all of it
+still fits (see the open points).
 
 Pins (`manifest/apps-lab.xml`):
 
@@ -134,26 +136,34 @@ Pins (`manifest/apps-lab.xml`):
 
 | Step | What it does |
 | --- | --- |
-| `00-base.sh` | packages, Docker, nested LXD (held at the installed revision), uv |
-| `20-lab-host.sh` | the pinned Boardfarm checkout and its environment, the nested LXD pool |
-| `30-boardfarm.sh` | the two-CPE lab configuration, `bf-lab setup`, the forwarding rule between Docker and LXD |
-| `40-routers.sh` | `apps-lab-router` for `bpibroadband-dac` and `bpibroadband-lcm` |
-| `50-runtime.sh` | the runtime service that brings Boardfarm and the routers back on boot |
-| `70-check.sh` | the acceptance check below |
+| `00-base.sh` | packages, Docker, nested LXD (held at the installed revision) |
+| `20-lab-host.sh` | the pinned Boardfarm checkout and its tools, the lab's two-CPE configuration, the nested LXD pool |
+| `30-boardfarm.sh` | Boardfarm's providers: `bf-lab setup`, then what the runtime does to make them stay right |
+| `40-routers.sh` | `apps-lab-router deploy` for `bpibroadband-dac` and `bpibroadband-lcm`, then the LAN clients |
+| `50-runtime.sh` | the runtime service that brings Boardfarm and the routers back on boot, and the bundle server |
+
+Then it reboots the VM, lets the runtime service bring the lab back, and runs
+the acceptance check.
 
 The VM runs the stock Ubuntu 24.04 kernel. Sizes are in `lab/lab.env` (4 CPUs,
 8 GiB, 40 GiB to start with). It has its own LXD pool, `apps-lab-pool`, like the
 other labs.
 
-The first acceptance (`apps-lab-check`, also `lab/build.sh check`), per router:
+The acceptance check (`apps-lab-check`, also `lab/build.sh check`), per router:
 
-1. the container runs and its system has come up;
-2. `erouter0` has an IPv4 address from the router's own Kea server;
-3. the router reaches the internet through its WAN gateway (ping and DNS);
-4. `brlan0` is up with the LAN port in it, and the LAN client has a lease from it;
-5. the LAN client reaches the internet through the router;
-6. the framework is there: DSM and Dobby on the DAC router, cthulhu and timingila
-   on the LCM router, and `Device.SoftwareModules.` answers on both.
+1. the container runs;
+2. `erouter0` has an IPv4 address from the router's own Kea server, and the
+   default route is the slot's WAN gateway;
+3. the router reaches the internet by address and by name;
+4. `brlan0` has its address with the LAN port in it, and the LAN client has a
+   lease from it;
+5. the LAN client reaches the router and, through it, the internet;
+6. the framework is there: DSM and Dobby on the DAC router, cthulhu, timingila
+   and celephais on the LCM router, the USP agent on both, and
+   `Device.SoftwareModules.` answers on rbus and on USP;
+7. the router reaches the VM's bundle server.
+
+And once for the lab: Boardfarm's own `bf-lab status`.
 
 ## Managing applications
 

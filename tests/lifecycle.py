@@ -27,7 +27,9 @@ import time
 PATHS = ("native", "rbus", "usp")
 DM = "Device.SoftwareModules."
 # What the bundles write to stdout, to recognise their output in the journal.
-OUTPUT = {"hello": "hello-from-dsm"}
+OUTPUT = {"hello": "hello-from-dsm", "tictactoe": "tictactoe alive"}
+# The page a bundle serves on the router's addresses: port and a text it contains.
+PAGES = {"tictactoe": (8090, "Tic-Tac-Toe")}
 
 
 def lab_routers():
@@ -67,6 +69,14 @@ class Router:
         """A table's instances: instance number -> the value of one of its fields."""
         pattern = re.compile(re.escape(DM + table) + r"\.(\d+)\." + re.escape(field) + "$")
         return {int(m.group(1)): value for path, value in self.data_model().items() if (m := pattern.match(path))}
+
+    def lan_page(self, port):
+        """What the slot's LAN client gets from the router's LAN address on a port."""
+        address = self.sh("ip -4 -o address show brlan0 | awk '{print $4; exit}'").strip().split("/")[0]
+        return subprocess.run(
+            ["docker", "exec", f"lan-cpe{self.cpe}", "curl", "-s", "--max-time", "5", f"http://{address}:{port}/"],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False,
+        ).stdout
 
     def instance(self, table, field, value):
         """The instance number of the row whose field has this value, or None."""
@@ -234,9 +244,18 @@ def lifecycle(run, router, framework, path, bundle):
         if lines:
             print(f"        {lines[-1].strip()}")
 
+    if bundle in PAGES:
+        port, text = PAGES[bundle]
+        run.check(
+            f"start: the LAN client gets the application's page (port {port})",
+            wait(lambda: text in router.lan_page(port), 30),
+        )
+
     reply = framework.set_state(path, unit, "Idle")
     run.check("stop: the execution unit is Idle", wait(lambda: unit_status(unit) == "Idle", 30), reply.strip()[-200:])
     run.check("stop: the runtime has no such container", wait(lambda: not framework.container_runs(unit), 30))
+    if bundle in PAGES:
+        run.check("stop: the page is gone", wait(lambda: PAGES[bundle][1] not in router.lan_page(PAGES[bundle][0]), 30))
 
     reply = framework.uninstall(path, url)
     if path == "usp":

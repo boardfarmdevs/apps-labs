@@ -73,7 +73,7 @@ check_router() {
 
     case "$framework" in
         dac) set -- dobby dsm ;;
-        lcm) set -- lcm-cthulhu lcm-timingila ;;
+        lcm) set -- lcm-cthulhu lcm-timingila lcm-celephais ;;
     esac
     for unit in "$@" usp-pa; do
         check "$unit runs" unit_active "$unit"

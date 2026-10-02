@@ -42,15 +42,17 @@ top level, fetched from a URL and run by crun.
 | Application | What it shows | Source | Build |
 | --- | --- | --- | --- |
 | `hello` | the smallest bundle: a shell loop that prints a heartbeat | the layer's `examples/hello-app` | `apps/build.sh hello`: busybox and glibc from the router image's own root filesystem (3.7 MB); runs on the DAC router, see below |
-| `tictactoe` | a web application: lighttpd serving a page on a port | the layer's `dac-image-tictactoe` | Yocto, `dac-bundle-image` class, in the router's build |
+| `tictactoe` | a web application: lighttpd serving the layer's tic-tac-toe page on port 8090, with a heartbeat on stdout; the container shares the router's network, so the page is at the router's addresses | the layer's `tictactoe-content`; `apps/tictactoe/` (server configuration, entrypoint, `config.json`) | `apps/build.sh tictactoe`: lighttpd, its modules and the libraries they need, from the router image's own root filesystem (7.3 MB); runs on the DAC router, the LAN client gets the page |
 | `lcm-webapp` | the same from a registry image, with the heartbeat cthulhu wants | the layer's `examples/lcm-webapp`, `examples/from-registry` | `docker buildx` for `linux/386`, exported and wrapped as a bundle |
 | `shell` | an application to look around a container from | `meta-dac-sdk-broadband` `dac-image-shell` | Yocto, the SDK's `dac-image-base` |
 | `iperf3` | a network application with arguments: throughput from inside a container to the WAN or LAN side | `meta-dac-sdk-broadband` `dac-image-iperf3` | Yocto, the SDK's `dac-image-base`; the lab's WAN gateway or LAN client as the server |
 | `speedtest` | an application that uses the router's rbus and telemetry from inside its container | `meta-dac-sdk-broadband` `dac-image-speedtest`, `rdk-speedtest-cli` | Yocto, the SDK; needs the bus mounted into the container |
 | any public image | the registry path the toolkit describes | Docker Hub, GHCR (`i386/alpine`, `i386/busybox`, …) | `examples/from-registry` |
 
-The first two phases of applications use `hello` and `tictactoe` on both
-routers: they need nothing from the SDK. The SDK's three follow, built for the
+The first two, `hello` and `tictactoe`, need neither the SDK nor a toolchain:
+`apps/build.sh` assembles them from programs of the router image itself and
+follows their shared libraries (`readelf`), so they match the router's userspace
+by construction. The SDK's three follow, built for the
 router's machine rather than for the Raspberry Pi the SDK names; whether its
 classes work unchanged in this workspace (they want `image-oci` from
 meta-virtualization and BundleGen with a platform template for the router) is
@@ -100,8 +102,10 @@ uninstalls it through that path alone. After each step it observes the result
 where it shows: the deployment and execution units over rbus, the container in
 Dobby, the application's output in the journal, the bundle's files.
 
-On `bpibroadband-dac` every check passes on all three paths, twice in a row
-(1 October 2026). Uninstall works over rbus (`rbuscli method_noargs
+On `bpibroadband-dac` every check passes on all three paths, for `hello` twice
+in a row and for `tictactoe` (`--bundle tictactoe`), where the test also has the
+slot's LAN client fetch the page from the router's LAN address while the
+application runs, and finds it gone after the stop (1 October 2026). Uninstall works over rbus (`rbuscli method_noargs
 "Device.SoftwareModules.DeploymentUnit.{i}.Uninstall()"`) and over USP as well.
 
 ## What this DSM does differently
