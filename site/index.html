@@ -121,8 +121,9 @@
     <h2>The life of an application</h2>
     <p>Seven steps, from a tar on the build host to a page a LAN client fetches, and back to
     nothing. Every step is the same data model operation whichever way it is sent: by the
-    framework's own tool, over rbus, or over USP.</p>
-    <figure class="life" data-step="4">
+    framework's own tool, over rbus, or over USP. It plays for the DAC router and then for the
+    LCM router; the buttons choose a step or a framework.</p>
+    <figure class="life" data-step="4" data-fw="dac">
       <div class="scroll">
       <svg viewBox="0 0 900 400" role="img" aria-label="The life of an application: built on the build host, put on the VM's bundle server, installed in the router by its framework, started as a container, used from the LAN client, stopped and uninstalled">
         <rect class="box host" x="10" y="60" width="160" height="130" rx="10"/>
@@ -145,10 +146,12 @@
         <text x="295" y="346" class="s">http, port 8080</text>
 
         <rect class="box router" x="410" y="40" width="300" height="330" rx="10"/>
-        <text x="424" y="62" class="l">router · DAC or LCM</text>
+        <text x="424" y="62" class="l fw-dac">router · bpibroadband-dac</text>
+        <text x="424" y="62" class="l fw-lcm">router · bpibroadband-lcm</text>
         <rect class="box" x="430" y="76" width="260" height="64" rx="8"/>
         <text x="560" y="100" class="t">framework</text>
-        <text x="560" y="120" class="s">DSM · Dobby  or  timingila · cthulhu</text>
+        <text x="560" y="120" class="s fw-dac">DAC: DSM · Dobby</text>
+        <text x="560" y="120" class="s fw-lcm">LCM: timingila · celephais · cthulhu</text>
 
         <rect class="slot" x="430" y="166" width="120" height="92" rx="8"/>
         <text x="490" y="184" class="s">deployment unit</text>
@@ -188,7 +191,7 @@
       <ol class="life-steps">
       <li data-name="Build">
         <h3><span class="n">1</span> Build the bundle</h3>
-        <p>An application is an OCI bundle: a root filesystem and a <code>config.json</code> in one tar. The lab assembles its two from programs of the router image itself, following their shared libraries, so they match the router's i686 userspace and need no toolchain.</p>
+        <p>An application is an OCI bundle: a root filesystem and a <code>config.json</code> in one tar. The lab assembles its two from programs of the router image itself, following their shared libraries, so they match the router's i686 userspace and need no toolchain. The same bundle goes to both routers.</p>
         <div class="cmds">
           <div><p>On the build host</p>
 <pre><code>$ apps/build.sh
@@ -208,60 +211,78 @@ bpibroadband-lcm: http://10.102.0.1:8080/tictactoe.tar</code></pre></div>
       </li>
       <li data-name="Install">
         <h3><span class="n">3</span> Install: a deployment unit</h3>
-        <p><code>InstallDU()</code> with the URL. The framework downloads the bundle and unpacks it: the deployment unit is <i>Installed</i>, and it has an execution unit, <i>Idle</i>.</p>
+        <p><code>InstallDU()</code> with the URL. The framework downloads the bundle and unpacks it: the deployment unit is <i>Installed</i>, and it has an execution unit, <i>Idle</i>. LCM also wants a version 5 UUID and the execution environment's path, and starts the unit by itself unless told <code>AutoStart=false</code>.</p>
         <div class="cmds">
-          <div><p>DAC router, its own tool</p>
+          <div class="fw-dac"><p>DAC, its own tool</p>
 <pre><code>dsmcli du.install default http://10.101.0.1:8080/tictactoe.tar</code></pre></div>
-          <div><p>LCM router, its own tool</p>
-<pre><code>the same step on bpibroadband-lcm follows its image</code></pre></div>
-          <div><p>Over rbus</p>
+          <div class="fw-dac"><p>DAC, over rbus</p>
 <pre><code>rbuscli method_values &quot;Device.SoftwareModules.InstallDU()&quot; \
     URL string http://10.101.0.1:8080/tictactoe.tar \
     ExecutionEnvRef string default</code></pre></div>
-          <div><p>Over USP</p>
+          <div class="fw-dac"><p>DAC, over USP</p>
 <pre><code>obuspa -c operate &quot;Device.SoftwareModules.InstallDU(URL=http://10.101.0.1:8080/tictactoe.tar,ExecutionEnvRef=default)&quot;</code></pre></div>
+          <div class="fw-lcm"><p>LCM, its own tool</p>
+<pre><code>ba-cli &#x27;Device.SoftwareModules.InstallDU(URL=&quot;http://10.102.0.1:8080/tictactoe.tar&quot;,
+    UUID=&quot;34f3d6b4-1c15-5f25-b9ef-352572a9bd0c&quot;,
+    ExecutionEnvRef=&quot;Device.SoftwareModules.ExecEnv.1.&quot;, AutoStart=false)&#x27;</code></pre></div>
+          <div class="fw-lcm"><p>LCM, over rbus</p>
+<pre><code>rbuscli method_values &quot;Device.SoftwareModules.InstallDU()&quot; \
+    URL string http://10.102.0.1:8080/tictactoe.tar \
+    UUID string 34f3d6b4-1c15-5f25-b9ef-352572a9bd0c \
+    ExecutionEnvRef string Device.SoftwareModules.ExecEnv.1. \
+    AutoStart boolean false</code></pre></div>
+          <div class="fw-lcm"><p>LCM, over USP</p>
+<pre><code>obuspa -c operate &quot;Device.SoftwareModules.InstallDU(URL=http://10.102.0.1:8080/tictactoe.tar,UUID=34f3d6b4-1c15-5f25-b9ef-352572a9bd0c,ExecutionEnvRef=Device.SoftwareModules.ExecEnv.1.)&quot;</code></pre></div>
         </div>
       </li>
       <li data-name="Start">
         <h3><span class="n">4</span> Start: a container</h3>
-        <p><code>SetRequestedState(Active)</code> on the execution unit. The framework hands the bundle to crun, and the application runs as a container inside the router: <i>Active</i>. Its output goes to the router's journal.</p>
+        <p><code>SetRequestedState(Active)</code> on the execution unit. The framework hands the bundle to crun, and the application runs as a container inside the router. Its output goes to the router's journal.</p>
         <div class="cmds">
-          <div><p>DAC router, its own tool</p>
+          <div class="fw-dac"><p>DAC, its own tool</p>
 <pre><code>dsmcli eu.start Kn
 DobbyTool list
  descriptor | id | state
         734 | Kn | running</code></pre></div>
-          <div><p>LCM router, its own tool</p>
-<pre><code>the same step on bpibroadband-lcm follows its image</code></pre></div>
+          <div class="fw-lcm"><p>LCM, its own tool</p>
+<pre><code>ba-cli &#x27;Device.SoftwareModules.ExecutionUnit.1.SetRequestedState(RequestedState=&quot;Active&quot;)&#x27;
+crun list        # the container, named by the unit&#x27;s EUID: running</code></pre></div>
           <div><p>Over rbus</p>
 <pre><code>rbuscli method_values &quot;Device.SoftwareModules.ExecutionUnit.1.SetRequestedState()&quot; \
     RequestedState string Active</code></pre></div>
           <div><p>Over USP</p>
 <pre><code>obuspa -c operate &quot;Device.SoftwareModules.ExecutionUnit.1.SetRequestedState(RequestedState=Active)&quot;</code></pre></div>
-          <div><p>The application&#x27;s output, in the router&#x27;s journal</p>
+          <div class="fw-dac"><p>The application&#x27;s output, in the router&#x27;s journal</p>
 <pre><code>tictactoe: lighttpd pid=4, the page is on port 8090
 tictactoe alive #1 host=Kn</code></pre></div>
+          <div class="fw-lcm"><p>The application&#x27;s output, in the router&#x27;s journal</p>
+<pre><code>tictactoe: lighttpd pid=4, the page is on port 8090
+tictactoe alive #1 host=tictactoe</code></pre></div>
         </div>
       </li>
       <li data-name="Use">
         <h3><span class="n">5</span> Use it from the LAN</h3>
         <p>The container shares the router's network, so the application's page is at the router's own addresses. The slot's LAN client, which has its address from the router, fetches it.</p>
         <div class="cmds">
-          <div><p>In the VM</p>
+          <div class="fw-dac"><p>In the VM</p>
 <pre><code>$ docker exec lan-cpe1 curl -s http://10.0.0.1:8090/ | grep title
+        &lt;title&gt;Tic-Tac-Toe&lt;/title&gt;</code></pre></div>
+          <div class="fw-lcm"><p>In the VM</p>
+<pre><code>$ docker exec lan-cpe2 curl -s http://10.0.0.1:8090/ | grep title
         &lt;title&gt;Tic-Tac-Toe&lt;/title&gt;</code></pre></div>
         </div>
       </li>
       <li data-name="Stop">
         <h3><span class="n">6</span> Stop</h3>
-        <p><code>SetRequestedState(Idle)</code>. The container ends; the bundle stays installed and the execution unit is <i>Idle</i> again. The page is gone.</p>
+        <p><code>SetRequestedState(Idle)</code>. The container ends; the bundle stays installed. The page is gone.</p>
         <div class="cmds">
-          <div><p>DAC router, its own tool</p>
+          <div class="fw-dac"><p>DAC, its own tool</p>
 <pre><code>dsmcli eu.stop Kn
 DobbyTool list
 no containers</code></pre></div>
-          <div><p>LCM router, its own tool</p>
-<pre><code>the same step on bpibroadband-lcm follows its image</code></pre></div>
+          <div class="fw-lcm"><p>LCM, its own tool</p>
+<pre><code>ba-cli &#x27;Device.SoftwareModules.ExecutionUnit.1.SetRequestedState(RequestedState=&quot;Idle&quot;)&#x27;
+crun list        # the container: stopped</code></pre></div>
           <div><p>Over rbus</p>
 <pre><code>rbuscli method_values &quot;Device.SoftwareModules.ExecutionUnit.1.SetRequestedState()&quot; \
     RequestedState string Idle</code></pre></div>
@@ -273,10 +294,10 @@ no containers</code></pre></div>
         <h3><span class="n">7</span> Uninstall</h3>
         <p><code>Uninstall()</code> on the deployment unit. The bundle's files, the deployment unit and its execution unit are gone from the router.</p>
         <div class="cmds">
-          <div><p>DAC router, its own tool</p>
+          <div class="fw-dac"><p>DAC, its own tool</p>
 <pre><code>dsmcli du.uninstall http://10.101.0.1:8080/tictactoe.tar</code></pre></div>
-          <div><p>LCM router, its own tool</p>
-<pre><code>the same step on bpibroadband-lcm follows its image</code></pre></div>
+          <div class="fw-lcm"><p>LCM, its own tool</p>
+<pre><code>ba-cli &#x27;Device.SoftwareModules.DeploymentUnit.1.Uninstall()&#x27;</code></pre></div>
           <div><p>Over rbus</p>
 <pre><code>rbuscli method_noargs &quot;Device.SoftwareModules.DeploymentUnit.1.Uninstall()&quot;</code></pre></div>
           <div><p>Over USP</p>
@@ -291,7 +312,7 @@ no containers</code></pre></div>
     <h2>The applications</h2>
     <p>The lab's first two need neither an SDK nor a toolchain: <code>apps/build.sh</code> assembles
     them from programs of the router image itself and follows their shared libraries, so they
-    match the router's userspace by construction. The same bundles are meant for both frameworks; so far they run on the DAC router.</p>
+    match the router's userspace by construction. The same bundle goes to both frameworks.</p>
     <div class="goals">
       <article class="goal">
         <p class="tag">3.7 MB</p>
@@ -325,10 +346,14 @@ no containers</code></pre></div>
         </ul>
       </article>
     </div>
-    <h3 class="apps-out">A run of the test</h3>
+
+    <h3 class="apps-out">A run of the test, on each router</h3>
     <p>The lifecycle test installs, starts, stops and uninstalls a bundle through one management
     path and, after each step, looks where the result shows: the data model, the container
-    runtime, the application's output, and for a page the LAN client.</p>
+    runtime, the application's output, and for a page the LAN client. On the DAC router every
+    check passes. On the LCM router the application lives the same life, but the execution unit's
+    <code>Status</code> lags behind the container: the two checks of it fail.</p>
+    <div class="runs">
 <pre><code>$ lab/build.sh test bpibroadband-dac --bundle tictactoe --path rbus
 bpibroadband-dac: starting the framework again with nothing installed
 bpibroadband-dac (dac), rbus: http://10.101.0.1:8080/tictactoe.tar
@@ -350,6 +375,45 @@ bpibroadband-dac (dac), rbus: http://10.101.0.1:8080/tictactoe.tar
   PASS  uninstall: its execution unit is gone
   PASS  uninstall: the bundle&#x27;s files are gone
 lifecycle: every check passed</code></pre>
+<pre><code>$ lab/build.sh test bpibroadband-lcm --bundle tictactoe --path rbus
+bpibroadband-lcm: starting the framework again with nothing installed
+bpibroadband-lcm (lcm), rbus: http://10.102.0.1:8080/tictactoe.tar
+  PASS  the framework runs and has nothing installed
+  PASS  the router can fetch the bundle
+  PASS  install: the deployment unit is Installed
+  PASS  install: it has one new execution unit
+  PASS  install: the execution unit f1cb6906-f5b7-5e6a-a968-af2555fcefda is Idle
+  PASS  install: the bundle&#x27;s files are on the router
+  FAIL  start: the execution unit is Active (its Status is Starting; )
+  PASS  start: the runtime has the container running
+  PASS  start: the application writes its output
+        tictactoe alive #7 host=tictactoe
+  PASS  start: the LAN client gets the application&#x27;s page (port 8090)
+  FAIL  stop: the execution unit is Idle (its Status is Stopping; )
+  PASS  stop: the runtime has no such container
+  PASS  stop: the page is gone
+  PASS  uninstall: the deployment unit is gone
+  PASS  uninstall: its execution unit is gone
+  PASS  uninstall: the bundle&#x27;s files are gone
+lifecycle: 2 check(s) failed</code></pre>
+    </div>
+
+    <h3 class="apps-out">The two frameworks, as the lab found them</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>DAC router</th><th>LCM router</th></tr></thead>
+      <tbody>
+        <tr><td>Framework</td><td>DSM, Dobby, crun 1.4</td><td>timingila 3.1, celephais 1.1, cthulhu 4.3, crun 1.6</td></tr>
+        <tr><td>Its own tool</td><td><code>dsmcli</code>, <code>DobbyTool</code></td><td><code>ba-cli</code>, <code>crun</code></td></tr>
+        <tr><td>Install wants</td><td>the URL and the environment's name, <code>default</code></td><td>the URL, a version 5 UUID and the environment's path; <code>AutoStart=false</code> to not start at once</td></tr>
+        <tr><td>The unit is called</td><td>a generated name, <code>Kn</code></td><td>its EUID, a UUID</td></tr>
+        <tr><td>The unit's Status</td><td>follows the container: Idle, Active</td><td>lags: stays Starting while it runs, Stopping after it has stopped</td></tr>
+        <tr><td>Stop, then start again</td><td>works</td><td>does not: uninstall and install again</td></tr>
+        <tr><td>Over USP</td><td>the whole life</td><td>the whole life; boolean arguments (<code>AutoStart</code>, <code>Privileged</code>) do not arrive</td></tr>
+        <tr><td>Took, to work at all</td><td>the bundle over HTTP (local files are not implemented); a factory reset file for the USP agent</td><td>three changes to the image build: a stale patch left out, a newer packager plugin, <code>useradd</code> in the image</td></tr>
+      </tbody>
+    </table></div>
+    <p>Each of these, with what the lab does about it, is in
+    <a href="https://github.com/boardfarmdevs/apps-labs/blob/main/doc/applications.md">the applications notes</a>.</p>
   </section>
 
 <!-- life:end -->
@@ -385,18 +449,14 @@ lifecycle: every check passed</code></pre>
           <td>The workspace syncs and verifies at the pins: the EasyMesh lab's upstream commits, the layer, <code>meta-amx</code> and <code>meta-lcm</code> at the tags the apps toolkit names.</td></tr>
         <tr><td>DAC image</td><td class="state done">Built</td>
           <td>Almost entirely from the EasyMesh lab's sstate: it is the same image.</td></tr>
-        <tr><td>LCM image</td><td class="state wait">Building</td>
-          <td>Its first build: the framework switch changes the distro features, so little comes from sstate.</td></tr>
-        <tr><td>Lab VM, DAC router</td><td class="state done">Checked</td>
-          <td><code>bpibroadband-dac</code> takes its WAN address from its own Kea server, reaches the internet through its WAN gateway, and serves its LAN client, which reaches the internet through it. DSM, Dobby and the USP agent run; <code>Device.SoftwareModules.</code> answers on rbus and on USP. The lab comes back by itself when the VM is stopped and started.</td></tr>
-        <tr><td>Lab VM, LCM router</td><td class="state wait">Next</td>
-          <td>Its Boardfarm slot is up; the router follows its image.</td></tr>
-        <tr><td>Applications, DAC</td><td class="state done">Running</td>
-          <td>Two applications, <code>hello</code> and the <code>tictactoe</code> web page, are installed from the lab's bundle server, started, stopped and uninstalled on <code>bpibroadband-dac</code>, over <code>dsmcli</code>, rbus and USP: a crun container in the router container in the VM. The LAN client fetches the page from the application through the router. More in <a href="https://github.com/boardfarmdevs/apps-labs/blob/main/doc/applications.md">the applications notes</a>.</td></tr>
-        <tr><td>Applications, LCM</td><td class="state wait">Next</td>
-          <td>The same on <code>bpibroadband-lcm</code>, then the applications of RDK's own SDK (<code>shell</code>, <code>iperf3</code>, <code>speedtest</code>).</td></tr>
+        <tr><td>LCM image</td><td class="state done">Built</td>
+          <td>From source: the framework switch changes nearly every signature, so only 12 % came from sstate. The layer's recipe for LCM needed three changes for the LCM the apps toolkit now names (prplware 4.1.0).</td></tr>
+        <tr><td>Lab VM, both routers</td><td class="state done">Checked</td>
+          <td><code>bpibroadband-dac</code> and <code>bpibroadband-lcm</code> run side by side. Each takes its WAN address from its own Kea server, reaches the internet through its WAN gateway, and serves its LAN client, which reaches the internet through it. Each has its framework's services and the USP agent running; <code>Device.SoftwareModules.</code> answers on rbus and on USP. The lab comes back by itself when the VM is stopped and started.</td></tr>
+        <tr><td>Applications</td><td class="state done">Running</td>
+          <td>Two applications, <code>hello</code> and the <code>tictactoe</code> web page, are installed from the lab's bundle server, started, stopped and uninstalled on both routers, by the framework's own tool, over rbus and over USP: a crun container in the router container in the VM. The LAN client fetches the page from the application through the router.</td></tr>
         <tr><td>Tests</td><td class="state done">Started</td>
-          <td>The lifecycle test (install, start, observe, stop, uninstall) passes on the DAC router for both applications over each path: <code>dsmcli</code>, rbus and USP. LCM, faults and persistence across a reboot are to come.</td></tr>
+          <td>The lifecycle test (install, start, observe, stop, uninstall, over each path) passes every check on the DAC router. On the LCM router the application lives the same life; the checks of the execution unit's <code>Status</code> fail, because it lags behind the container. Faults and persistence across a reboot are to come.</td></tr>
       </tbody>
     </table></div>
     <p>The phases, what the first builds showed and what is still open are in

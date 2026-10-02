@@ -131,4 +131,17 @@ code { font: 14px/1.5 ui-monospace, "SFMono-Regular", Menlo, monospace; }
 .life.scripted .life-steps > li { display: none; }
 .life.scripted .life-steps > li.current { display: block; }
 .out { color: var(--muted); }
-.apps-out { margin-top: 16px; }
+.apps-out { margin-top: 32px; }
+
+/* The figure and its steps are for one framework at a time once the script runs. */
+.life svg .fw-lcm { display: none; }
+.life.scripted[data-fw="lcm"] svg .fw-lcm { display: inline; }
+.life.scripted[data-fw="lcm"] svg .fw-dac { display: none; }
+.life.scripted[data-fw="dac"] .life-steps .fw-lcm,
+.life.scripted[data-fw="lcm"] .life-steps .fw-dac { display: none; }
+.life-controls .fw { font-weight: 600; }
+.life-controls .fw[aria-pressed="true"] { background: var(--app); border-color: var(--app); color: #fff; }
+.life-controls .gap { width: 10px; }
+.runs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 12px; }
+.runs pre { margin: 0; }
+.runs code { font-size: 12.5px; }

@@ -14,6 +14,24 @@
   let current = Math.max(0, Number(figure.dataset.step || 1) - 1);
   let timer = null;
 
+  // The framework the figure and the commands are for.
+  const frameworks = [['dac', 'DAC'], ['lcm', 'LCM']].map(([name, label]) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'fw';
+    button.textContent = label;
+    button.addEventListener('click', () => { stop(); framework(name); });
+    controls.append(button);
+    return [name, button];
+  });
+  const gap = document.createElement('span');
+  gap.className = 'gap';
+  controls.append(gap);
+  function framework(name) {
+    figure.dataset.fw = name;
+    frameworks.forEach(([other, button]) => button.setAttribute('aria-pressed', other === name ? 'true' : 'false'));
+  }
+
   const buttons = steps.map((step, index) => {
     const button = document.createElement('button');
     button.type = 'button';
@@ -47,12 +65,17 @@
   }
   function start() {
     stop();
-    timer = setInterval(() => show(current + 1), pace);
+    timer = setInterval(() => {
+      // after the last step, the other framework's turn
+      if (current === steps.length - 1) framework(figure.dataset.fw === 'dac' ? 'lcm' : 'dac');
+      show(current + 1);
+    }, pace);
     label();
   }
   play.addEventListener('click', () => (timer ? stop() : start()));
 
   figure.classList.add('scripted');
+  framework(figure.dataset.fw === 'lcm' ? 'lcm' : 'dac');
   // A link can name a step: #life-5 opens on the fifth and does not play.
   const named = /^#life-(\d+)$/.exec(window.location.hash);
   const linked = named && Number(named[1]) >= 1 && Number(named[1]) <= steps.length;
